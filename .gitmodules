@@ -6,16 +6,16 @@
 	url = https://github.com/transpect/xproc-util
 [submodule "docx2hub"]
 	path = docx2hub
-	url = https://github.com/transpect/docx2hub
+	url = https://github.com/baradhili/docx2hub
 [submodule "evolve-hub"]
 	path = evolve-hub
 	url = https://github.com/transpect/evolve-hub
 [submodule "xml2tex"]
 	path = xml2tex
-	url = https://github.com/transpect/xml2tex
+	url = https://github.com/baradhili/xml2tex
 [submodule "mml2tex"]
 	path = mml2tex
-	url = https://github.com/transpect/mml2tex
+	url = https://github.com/baradhili/mml2tex
 [submodule "htmlreports"]
 	path = htmlreports
 	url = https://github.com/transpect/htmlreports
