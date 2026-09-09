@@ -49,7 +49,7 @@ DIR="$( real_dir "${BASH_SOURCE[0]}" )"
 CALABASH="$DIR/calabash/calabash.sh"
 
 # invoke pdflatex
-PDFLATEX=pdflatex
+PDFLATEX=lualatex
 MTEFSOURCE="ole"
 TABLEMODEL=""
 TABLEGRID=""
