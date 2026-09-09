@@ -261,6 +261,7 @@
     <p:with-option name="status-dir-uri" select="$status-dir-uri"/>
     <p:with-option name="use-filename-from-http-response" select="$use-filename-from-http-response"/>
     <p:with-option name="extract-dir" select="$extract-dir"/>
+    <p:with-option name="include-header-and-footer" select="'yes'"/>
   </docx2hub:convert>
   
   <docx2tex:generate-conf-template>
