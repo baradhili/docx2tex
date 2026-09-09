@@ -24,11 +24,15 @@
   <xsl:variable name="colors"     as="xs:string*"
                 select="(
                          //@css:background-color,
-                         //@css:color[not(every $i in  tr:hex-rgb-color-to-ints(.) satisfies $i &lt; 35  
+                         //@css:color[not(every $i in  tr:hex-rgb-color-to-ints(.) satisfies $i &lt; 35
                                           or parent::*[(@role, @name) = ('ZFinlineequation', 'ZFequation')]
                                           or ancestor::dbk:para/dbk:phrase[@role = ('ZFinlineequation', 'ZFequation', 'Hyperlink')]
                                           or ancestor-or-self::dbk:link
                                           or parent::*[@native-name eq 'Hyperlink'])],
+                         //@css:border-top-color[starts-with(., '#')],
+                         //@css:border-bottom-color[starts-with(., '#')],
+                         //@css:border-left-color[starts-with(., '#')],
+                         //@css:border-right-color[starts-with(., '#')],
                          for $mml2tex-color in (
                                         for $mml2tex-snippet in //processing-instruction('mml2tex')/tokenize(., '\\textcolor') 
                                         return replace($mml2tex-snippet, '\{([-a-z0-9]+?)\}.*$', '$1', 'i')
@@ -69,16 +73,29 @@
     % you can download it on GitHub:
     % https://github.com/transpect/docx2tex
     % 
-    \documentclass{scrbook}
+    \documentclass[12pt]{scrbook}
     \usepackage[T1]{fontenc}
     \usepackage[utf8]{inputenc}
     <xsl:if test="//dbk:imagedata">
       <xsl:text>\usepackage{graphicx}&#xa;</xsl:text>
     </xsl:if>
+    <xsl:if test="/dbk:hub/@css:page-width">
+      <xsl:text>\usepackage{geometry}&#xa;</xsl:text>
+      <xsl:value-of select="concat('\geometry{paperwidth=', replace(/dbk:hub/@css:page-width, '[a-z]+$', ''),
+                                   'pt, paperheight=', replace(/dbk:hub/@css:page-height, '[a-z]+$', ''),
+                                   'pt, top=', replace(/dbk:hub/@css:margin-top, '[a-z]+$', ''),
+                                   'pt, bottom=', replace(/dbk:hub/@css:margin-bottom, '[a-z]+$', ''),
+                                   'pt, left=', replace(/dbk:hub/@css:margin-left, '[a-z]+$', ''),
+                                   'pt, right=', replace(/dbk:hub/@css:margin-right, '[a-z]+$', ''),
+                                   'pt}&#xa;')"/>
+    </xsl:if>
     \usepackage{hyperref}
     \usepackage{multirow}
     \usepackage{tabularx}
     \usepackage{color}
+    <xsl:if test="//*[@css:background-color]">
+      <xsl:text>\usepackage{colortbl}&#xa;</xsl:text>
+    </xsl:if>
     \usepackage{textcomp}
     <xsl:choose>
       <xsl:when test="//dbk:div[@role eq 'hub:index'][1]">
@@ -106,8 +123,30 @@
       <xsl:value-of select="concat('\usepackage{', $letter-spacing-def,'}&#xa;')"/>
     </xsl:if>
     \usepackage{arydshln}
+    <!-- Arial-like sans serif text font (Word default body font is usually Arial) -->
+    <xsl:text>\usepackage{tgheros}&#xa;\renewcommand{\familydefault}{\sfdefault}&#xa;</xsl:text>
+    <!-- approximate the typical Word 'Normal' style spacing after of 0.5 line (170tw = 8.5pt) -->
+    <xsl:text>\setlength{\parskip}{8.5pt}&#xa;\setlength{\parindent}{0pt}&#xa;</xsl:text>
     <xsl:if test="//dbk:div[@role eq 'hub:index'][1]">
       <xsl:text>\usepackage{makeidx}&#xa;\makeindex&#xa;</xsl:text>
+    </xsl:if>
+    <!-- Word headers/footers (included by docx2hub with include-header-and-footer=yes):
+         render the first section's default header/footer in a fancyhdr parbox -->
+    <xsl:if test="(//dbk:div[@role eq 'docx2hub:header'][@condition eq 'default'])[1]">
+      <xsl:text>\usepackage{fancyhdr}&#xa;\pagestyle{fancy}&#xa;\fancyhf{}&#xa;\renewcommand{\headrulewidth}{0pt}&#xa;\renewcommand{\footrulewidth}{0pt}&#xa;</xsl:text>
+      <xsl:variable name="hdr" select="(//dbk:div[@role eq 'docx2hub:header'][@condition eq 'default'])[1]" as="element(dbk:div)"/>
+      <xsl:text>\fancyhead[L]{\parbox[t]{\textwidth}{%&#xa;</xsl:text>
+      <xsl:apply-templates select="$hdr/node()" mode="#current"/>
+      <xsl:apply-templates select="$hdr//dbk:imagedata[@fileref][@css:width][ancestor::dbk:div[@role eq 'docx2hub:header']]" mode="#current"/>
+      <xsl:apply-templates select="$hdr//dbk:imagedata[svg:svg][ancestor::dbk:div[@role eq 'docx2hub:header']]" mode="#current"/>
+      <xsl:text>}}&#xa;</xsl:text>
+      <xsl:variable name="ftr" select="(//dbk:div[@role eq 'docx2hub:footer'][@condition eq 'default'])[1]" as="element(dbk:div)?"/>
+      <xsl:if test="$ftr">
+        <xsl:text>\fancyfoot[L]{\parbox[b]{\textwidth}{%&#xa;</xsl:text>
+        <xsl:apply-templates select="$ftr/node()" mode="#current"/>
+        <xsl:apply-templates select="$ftr//dbk:imagedata[@fileref][@css:width][ancestor::dbk:div[@role eq 'docx2hub:footer']]" mode="#current"/>
+        <xsl:text>}}&#xa;</xsl:text>
+      </xsl:if>
     </xsl:if>
     <xsl:sequence select="if(exists($langs)) 
                           then string-join(xml2tex:langs-to-latex-pkg( $langs ), '&#xa;') 
@@ -1505,5 +1544,120 @@
       </xsl:otherwise>
     </xsl:choose>
   </xsl:function>
+
+  <!-- ==================== Word layout fidelity (page geometry, SDT fields, sizes, spacing, header/footer) ==================== -->
+
+  <xsl:variable name="docProps-sdt-roles" as="xs:string+"
+                select="('Category', 'Title', 'Subject', 'Manager', 'Status', 'Company', 'Abstract',
+                         'Keywords', 'Created', 'Modified', 'PrintDate', 'PublishDate', 'Author',
+                         'LastModifiedBy', 'Revision', 'Comments', 'ContentType', 'Identifier')"/>
+
+  <!-- SDT docProps wrappers (cover page fields such as Title, Subject, Status) are inline
+       content, not quotations: neutralize the quote environment for them -->
+  <template context="dbk:blockquote[@role = $docProps-sdt-roles]">
+    <xsl:apply-templates select="node()" mode="#current"/>
+  </template>
+
+  <!-- font size on phrases (run level) -->
+  <template context="dbk:phrase[@css:font-size]">
+    <xsl:variable name="size" select="replace(@css:font-size, '[a-z]+$', '')" as="xs:string"/>
+    <xsl:text>{\fontsize{</xsl:text>
+    <xsl:value-of select="$size"/>
+    <xsl:text>pt}{</xsl:text>
+    <xsl:value-of select="round(number($size) * 1.15 * 10) div 10"/>
+    <xsl:text>pt}\selectfont </xsl:text>
+    <xsl:next-match/>
+    <xsl:text>}</xsl:text>
+  </template>
+
+  <!-- font size from paragraph style, e.g. custom Word styles such as 'Subheadlines' -->
+  <template context="dbk:para[key('style', @role)/@css:font-size][not(@css:font-size)]
+                             [not(number(replace(key('style', @role)/@css:font-size, '[a-z]+$', '')) eq 12)]">
+    <xsl:variable name="size" select="replace(key('style', @role)/@css:font-size, '[a-z]+$', '')" as="xs:string"/>
+    <xsl:text>{\fontsize{</xsl:text>
+    <xsl:value-of select="$size"/>
+    <xsl:text>pt}{</xsl:text>
+    <xsl:value-of select="round(number($size) * 1.15 * 10) div 10"/>
+    <xsl:text>pt}\selectfont </xsl:text>
+    <xsl:next-match/>
+    <xsl:text>}</xsl:text>
+  </template>
+
+  <!-- paragraph spacing: explicit margin-top -->
+  <template context="dbk:para[@css:margin-top[matches(., '^[1-9]')]][not(ancestor::dbk:listitem)]">
+    <xsl:text>\vspace*{</xsl:text>
+    <xsl:value-of select="replace(@css:margin-top, '[a-z]+$', '')"/>
+    <xsl:text>pt}</xsl:text>
+    <xsl:next-match/>
+  </template>
+
+  <!-- paragraph spacing: explicit margin-bottom -->
+  <template context="dbk:para[@css:margin-bottom[matches(., '^[1-9]')]][not(ancestor::dbk:listitem)]">
+    <xsl:next-match/>
+    <xsl:text>\vspace{</xsl:text>
+    <xsl:value-of select="replace(@css:margin-bottom, '[a-z]+$', '')"/>
+    <xsl:text>pt}</xsl:text>
+  </template>
+
+  <!-- paragraph spacing: margin-top from paragraph style -->
+  <template context="dbk:para[key('style', @role)/@css:margin-top[matches(., '^[1-9]')]][not(@css:margin-top)]
+                             [not(ancestor::dbk:listitem)]">
+    <xsl:text>\vspace*{</xsl:text>
+    <xsl:value-of select="replace(key('style', @role)/@css:margin-top, '[a-z]+$', '')"/>
+    <xsl:text>pt}</xsl:text>
+    <xsl:next-match/>
+  </template>
+
+  <!-- line height (multiple line spacing, e.g. Word 1.08 lines) -->
+  <template context="dbk:para[@css:line-height[matches(., '^\d\.')][not(. eq '1')]]">
+    <xsl:text>{\linespread{</xsl:text>
+    <xsl:value-of select="round(number(@css:line-height) * 100) div 100"/>
+    <xsl:text>}\selectfont </xsl:text>
+    <xsl:next-match/>
+    <xsl:text>}</xsl:text>
+  </template>
+
+  <!-- Word section breaks (nextPage) become page breaks -->
+  <template context="dbk:para[@css:page-break-after eq 'always'][not(parent::dbk:listitem)]">
+    <xsl:next-match/>
+    <xsl:text>\clearpage&#xa;</xsl:text>
+  </template>
+
+  <!-- Word tables flow inline where they appear, they are not floats -->
+  <template context="dbk:informaltable[not(parent::dbk:entry)]">
+    <xsl:text>\noindent </xsl:text>
+    <xsl:apply-templates select="node()" mode="#current"/>
+    <xsl:text>&#xa;</xsl:text>
+  </template>
+
+  <!-- drop the docx2hub header/footer specs from the body flow;
+       their content is rendered in the preamble via fancyhdr -->
+  <template context="dbk:div[@role = ('docx2hub:header-spec', 'docx2hub:footer-spec')]"/>
+
+  <!-- paragraphs inside header/footer only emit inline text content (no paragraph breaks,
+       images are rendered separately to control the line order) -->
+  <template context="dbk:para[ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')]]">
+    <xsl:apply-templates select="node()[not(self::dbk:mediaobject or self::dbk:inlinemediaobject)]" mode="#current"/>
+  </template>
+
+  <!-- raster images in headers/footers keep their Word size and start a new line -->
+  <template context="dbk:imagedata[@fileref][@css:width][ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')]]">
+    <xsl:text>\\[2pt] </xsl:text>
+    <xsl:text>\includegraphics[width=</xsl:text>
+    <xsl:value-of select="replace(@css:width, '[a-z]+$', '')"/>
+    <xsl:text>pt]{</xsl:text>
+    <xsl:value-of select="replace(@fileref, '([%#])', '\\$1')"/>
+    <xsl:text>}</xsl:text>
+  </template>
+
+  <!-- vector shapes (rendered as SVG by docx2hub) in headers become rules -->
+  <template context="dbk:imagedata[svg:svg][ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')]]">
+    <xsl:text>\\[1pt] </xsl:text>
+    <xsl:text>\makebox[\textwidth][c]{\rule{</xsl:text>
+    <xsl:value-of select="replace(svg:svg/@width, '[a-z]+$', '')"/>
+    <xsl:text>pt}{</xsl:text>
+    <xsl:value-of select="max((round(number(replace(svg:svg/@height, '[a-z]+$', '')) * 10) div 10, 0.4))"/>
+    <xsl:text>pt}}</xsl:text>
+  </template>
 
 </set>
