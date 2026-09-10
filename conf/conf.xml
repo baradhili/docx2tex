@@ -42,6 +42,24 @@
   <xsl:variable name="langs" select="distinct-values(//@xml:lang)" as="xs:string*"/>
   
   <xsl:variable name="footnotes" select="//dbk:footnote" as="element(dbk:footnote)*"/>
+
+  <!-- bottom band occupied by the Word footer (vision text baseline 121pt above the page
+       bottom, see the \put(56.7,121) below, plus one 10pt line ascent and clearance),
+       drawn as an absolute shipout picture; body text must be kept out of it -->
+  <xsl:variable name="footer-band-height" as="xs:double?"
+                select="if (exists((//dbk:div[@role eq 'docx2hub:footer'][@condition eq 'default'])[1]))
+                        then 121 + 12
+                        else ()"/>
+
+  <!-- shrink \textheight on the pages before the first section break (the cover) so
+       body text stays above the footer band; \newgeometry is not used because it also
+       resets topskip/headheight etc. to package defaults and shifts the text block -->
+  <xsl:variable name="cover-footer-reserve" as="xs:string?"
+                select="if ($footer-band-height
+                            and /dbk:hub/@css:page-width
+                            and number(replace(/dbk:hub/@css:margin-bottom, '[a-z]+$', '')) &lt; $footer-band-height)
+                        then concat('-', $footer-band-height - number(replace(/dbk:hub/@css:margin-bottom, '[a-z]+$', '')), 'pt')
+                        else ()"/>
   
   <xsl:variable name="letter-spacing-def" select="'soul'" as="xs:string?">
     <!-- define which makro is used for letter spacing. allowed values: 
@@ -1648,6 +1666,16 @@
     <xsl:text>\clearpage&#xa;</xsl:text>
   </template>
 
+  <!-- end the footer-band reservation of the cover at the first section break -->
+  <template context="dbk:para[@css:page-break-after eq 'always'][not(parent::dbk:listitem)][not(preceding::dbk:para[@css:page-break-after eq 'always'])]">
+    <xsl:next-match/>
+    <xsl:if test="$cover-footer-reserve">
+      <xsl:text>\addtolength{\textheight}{</xsl:text>
+      <xsl:value-of select="replace($cover-footer-reserve, '-', '')"/>
+      <xsl:text>}&#xa;</xsl:text>
+    </xsl:if>
+  </template>
+
   <!-- Word tables flow inline where they appear, they are not floats -->
   <template context="dbk:informaltable[not(parent::dbk:entry)]">
     <xsl:text>\noindent </xsl:text>
@@ -1658,6 +1686,18 @@
   <!-- drop the docx2hub header/footer specs from the body flow;
        their content is rendered in the preamble via fancyhdr -->
   <template context="dbk:div[@role = ('docx2hub:header-spec', 'docx2hub:footer-spec')]"/>
+
+  <!-- reserve the footer band on the pages before the first section break (the cover):
+       Word pushes body text above a tall footer; the LaTeX geometry does not know about
+       the absolutely positioned band. Undone at the first section break below. -->
+  <template context="/dbk:hub/dbk:div[@role = ('docx2hub:header-spec', 'docx2hub:footer-spec')][1]">
+    <xsl:if test="$cover-footer-reserve">
+      <xsl:text>\addtolength{\textheight}{</xsl:text>
+      <xsl:value-of select="$cover-footer-reserve"/>
+      <xsl:text>}&#xa;</xsl:text>
+    </xsl:if>
+    <xsl:next-match/>
+  </template>
 
   <!-- paragraphs inside header/footer only emit inline text content (no paragraph
        breaks, no images: those are placed separately at absolute positions) -->
