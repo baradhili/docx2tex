@@ -744,18 +744,20 @@
 
   <template context="*[local-name() = $text-style-elements]
                       [not(@css:background-color eq '#FFFFFF')
-                                and (@css:background-color 
+                                and (@css:background-color
                                 or exists(key('style', @role)[@css:background-color and not(@css:background-color eq '#FFFFFF') ]))]
                                [not(.//dbk:footnote)]">
-    <rule name="colorbox" type="cmd">
-      <param select="for $color-code in (@css:background-color, key('style', @role)/@css:background-color)[1] 
-                     return if(exists(tr:color-hex-rgb-to-keyword($color-code)))
-                            then tr:color-hex-rgb-to-keyword($color-code)[1]
-                            else concat('color-', upper-case(substring-after($color-code, '#')))"/>
-      <xsl:text>{</xsl:text>
-      <xsl:next-match/>
-      <xsl:text>}</xsl:text>
-    </rule>
+    <!-- \fboxsep=0pt: Word text highlight has no padding around the highlighted run;
+         the default 3pt \fboxsep inserted visual gaps between adjacent runs
+         (e.g. "Month 20 YY" instead of "Month 20YY") -->
+    <xsl:text>{\fboxsep0pt\colorbox{</xsl:text>
+    <xsl:value-of select="for $color-code in (@css:background-color, key('style', @role)/@css:background-color)[1]
+                          return if(exists(tr:color-hex-rgb-to-keyword($color-code)))
+                                 then tr:color-hex-rgb-to-keyword($color-code)[1]
+                                 else concat('color-', upper-case(substring-after($color-code, '#')))"/>
+    <xsl:text>}{</xsl:text>
+    <xsl:next-match/>
+    <xsl:text>}}</xsl:text>
   </template>
 
   <!-- regular superscript and subscripts -->
