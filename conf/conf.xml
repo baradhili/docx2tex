@@ -58,7 +58,7 @@
                 select="if ($footer-band-height
                             and /dbk:hub/@css:page-width
                             and number(replace(/dbk:hub/@css:margin-bottom, '[a-z]+$', '')) &lt; $footer-band-height)
-                        then concat('-', $footer-band-height - number(replace(/dbk:hub/@css:margin-bottom, '[a-z]+$', '')), 'pt')
+                        then concat('-', $footer-band-height - number(replace(/dbk:hub/@css:margin-bottom, '[a-z]+$', '')), 'bp')
                         else ()"/>
   
   <xsl:variable name="letter-spacing-def" select="'soul'" as="xs:string?">
@@ -113,13 +113,30 @@
     </xsl:if>
     <xsl:if test="/dbk:hub/@css:page-width">
       <xsl:text>\usepackage{geometry}&#xa;</xsl:text>
-      <xsl:value-of select="concat('\geometry{paperwidth=', replace(/dbk:hub/@css:page-width, '[a-z]+$', ''),
-                                   'pt, paperheight=', replace(/dbk:hub/@css:page-height, '[a-z]+$', ''),
-                                   'pt, top=', replace(/dbk:hub/@css:margin-top, '[a-z]+$', ''),
-                                   'pt, bottom=', replace(/dbk:hub/@css:margin-bottom, '[a-z]+$', ''),
-                                   'pt, left=', replace(/dbk:hub/@css:margin-left, '[a-z]+$', ''),
-                                   'pt, right=', replace(/dbk:hub/@css:margin-right, '[a-z]+$', ''),
-                                   'pt}&#xa;')"/>
+      <!-- docx lengths (twips/20) are PDF points (bp); TeX pt are 0.37 % smaller, so emit
+           bp units. Use a named standard size when the dimensions match one (portrait),
+           numeric bp otherwise -->
+      <xsl:variable name="page-width-bp" as="xs:double" select="number(replace(/dbk:hub/@css:page-width, '[a-z]+$', ''))"/>
+      <xsl:variable name="page-height-bp" as="xs:double" select="number(replace(/dbk:hub/@css:page-height, '[a-z]+$', ''))"/>
+      <xsl:variable name="paper-option" as="xs:string?">
+        <xsl:choose>
+          <xsl:when test="abs($page-width-bp - 595.3) lt 0.5 and abs($page-height-bp - 841.9) lt 0.5">a4paper</xsl:when>
+          <xsl:when test="abs($page-width-bp - 419.5) lt 0.5 and abs($page-height-bp - 595.3) lt 0.5">a5paper</xsl:when>
+          <xsl:when test="abs($page-width-bp - 841.9) lt 0.5 and abs($page-height-bp - 1190.55) lt 0.5">a3paper</xsl:when>
+          <xsl:when test="abs($page-width-bp - 612) lt 0.5 and abs($page-height-bp - 792) lt 0.5">letterpaper</xsl:when>
+          <xsl:when test="abs($page-width-bp - 612) lt 0.5 and abs($page-height-bp - 1008) lt 0.5">legalpaper</xsl:when>
+          <xsl:when test="abs($page-width-bp - 522) lt 0.5 and abs($page-height-bp - 756) lt 0.5">executivepaper</xsl:when>
+        </xsl:choose>
+      </xsl:variable>
+      <xsl:value-of select="concat('\geometry{',
+                                   if ($paper-option)
+                                   then $paper-option
+                                   else concat('paperwidth=', $page-width-bp, 'bp, paperheight=', $page-height-bp, 'bp'),
+                                   ', top=', replace(/dbk:hub/@css:margin-top, '[a-z]+$', ''),
+                                   'bp, bottom=', replace(/dbk:hub/@css:margin-bottom, '[a-z]+$', ''),
+                                   'bp, left=', replace(/dbk:hub/@css:margin-left, '[a-z]+$', ''),
+                                   'bp, right=', replace(/dbk:hub/@css:margin-right, '[a-z]+$', ''),
+                                   'bp}&#xa;')"/>
     </xsl:if>
     \usepackage{hyperref}
     \usepackage{multirow}
