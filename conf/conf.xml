@@ -1772,12 +1772,28 @@
   <!-- line breaks have no meaning inside absolutely positioned header/footer text -->
   <template context="dbk:br[ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')]]"/>
 
+  <!-- Word srcRect/VML crops as graphicx trim: crop fractions are relative to the
+       image's natural size, which only TeX knows, so measure it first with \sbox -->
+  <xsl:function name="tr:crop-includegraphics" as="xs:string">
+    <xsl:param name="img" as="element(dbk:imagedata)"/>
+    <xsl:variable name="l" as="xs:double" select="number(($img/@css:crop-left ! substring-before(., '%'), '0')[1]) div 100"/>
+    <xsl:variable name="t" as="xs:double" select="number(($img/@css:crop-top ! substring-before(., '%'), '0')[1]) div 100"/>
+    <xsl:variable name="r" as="xs:double" select="number(($img/@css:crop-right ! substring-before(., '%'), '0')[1]) div 100"/>
+    <xsl:variable name="b" as="xs:double" select="number(($img/@css:crop-bottom ! substring-before(., '%'), '0')[1]) div 100"/>
+    <xsl:sequence select="if ($l eq 0 and $t eq 0 and $r eq 0 and $b eq 0)
+                          then '\includegraphics['
+                          else concat('\sbox\@tempboxa{\includegraphics{', replace($img/@fileref, '([%#])', '\\$1'), '}}%', '&#xa;',
+                                      '\includegraphics[trim={\dimexpr', $l, '\wd\@tempboxa\relax} {\dimexpr', $b, '\ht\@tempboxa\relax} {\dimexpr', $r, '\wd\@tempboxa\relax} {\dimexpr', $t, '\ht\@tempboxa\relax}, clip, ')"/>
+  </xsl:function>
+
   <!-- logo in the Word header: left margin minus the Word anchor offset (-9.75pt),
        top edge 33.25pt below the page top, at its Word size -->
   <template context="dbk:imagedata[@fileref][@css:width][ancestor::dbk:div[@role eq 'docx2hub:header']]">
     <xsl:text>  \put(46.95,</xsl:text>
     <xsl:value-of select="number(replace(/dbk:hub/@css:page-height, '[a-z]+$', '')) - 33.25 - number(replace(@css:height, '[a-z]+$', ''))"/>
-    <xsl:text>){\includegraphics[width=</xsl:text>
+    <xsl:text>){</xsl:text>
+    <xsl:value-of select="tr:crop-includegraphics(.)"/>
+    <xsl:text>width=</xsl:text>
     <xsl:value-of select="replace(@css:width, '[a-z]+$', '')"/>
     <xsl:text>pt,height=</xsl:text>
     <xsl:value-of select="replace(@css:height, '[a-z]+$', '')"/>
@@ -1789,7 +1805,9 @@
   <!-- banner image in the Word footer: flush with the page bottom and left edge,
        spanning the full page width at its Word size -->
   <template context="dbk:imagedata[@fileref][@css:width][ancestor::dbk:div[@role eq 'docx2hub:footer']]">
-    <xsl:text>  \put(0,0){\includegraphics[width=\paperwidth,height=</xsl:text>
+    <xsl:text>  \put(0,0){</xsl:text>
+    <xsl:value-of select="tr:crop-includegraphics(.)"/>
+    <xsl:text>width=\paperwidth,height=</xsl:text>
     <xsl:value-of select="replace(@css:height, '[a-z]+$', '')"/>
     <xsl:text>pt]{</xsl:text>
     <xsl:value-of select="replace(@fileref, '([%#])', '\\$1')"/>
