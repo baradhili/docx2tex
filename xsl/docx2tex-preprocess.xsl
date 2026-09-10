@@ -266,9 +266,10 @@
     <xsl:apply-templates mode="#current"/>
   </xsl:template>
   
-  <!-- remove empty paragraphs #13946 -->
-  
-  <xsl:template match="para[not(.//text()) or (every $i in .//text() satisfies matches($i, '^\s+$'))][not(* except tab)]" mode="docx2tex-preprocess"/>
+  <!-- remove empty paragraphs #13946; keep those that carry a page break
+       (Word section breaks are marked on the empty sectPr paragraph) -->
+
+  <xsl:template match="para[not(.//text()) or (every $i in .//text() satisfies matches($i, '^\s+$'))][not(* except tab)][not(@css:page-break-after)]" mode="docx2tex-preprocess"/>
   
   <!-- resolve carriage returns in empty paragraphs. the paragraph will cause a break as well #14306 -->
   
