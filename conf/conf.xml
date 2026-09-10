@@ -182,12 +182,41 @@
       <xsl:text>\usepackage{makeidx}&#xa;\makeindex&#xa;</xsl:text>
     </xsl:if>
     <!-- Word headers/footers (included by docx2hub with include-header-and-footer=yes):
-         rendered at absolute page positions via eso-pic, matching the Word anchoring
-         (OFFICIAL line, logo, separator rule at top; vision text and banner at bottom) -->
-    <xsl:if test="(//dbk:div[@role eq 'docx2hub:header'][@condition eq 'default'])[1]">
-      <xsl:variable name="hdr" select="(//dbk:div[@role eq 'docx2hub:header'][@condition eq 'default'])[1]" as="element(dbk:div)"/>
-      <xsl:text>\usepackage{eso-pic}&#xa;\pagestyle{empty}&#xa;</xsl:text>
-      <xsl:text>\AddToShipoutPicture{%&#xa;</xsl:text>
+         every section's default header/footer part becomes a fancyhdr page style,
+         switched at the Word section breaks (see the section-break template below).
+         Absolutely positioned elements (classification marking, cover artwork,
+         full-bleed bands) are rendered via eso-pic instead. -->
+    <xsl:variable name="docx-headers" select="//dbk:div[@role eq 'docx2hub:header'][@condition eq 'default']" as="element(dbk:div)*"/>
+    <xsl:variable name="docx-footers" select="//dbk:div[@role eq 'docx2hub:footer'][@condition eq 'default']" as="element(dbk:div)*"/>
+    <xsl:if test="exists($docx-headers)">
+      <xsl:text>\usepackage{eso-pic}&#xa;\usepackage{fancyhdr}&#xa;\usepackage{zref-abspage}&#xa;</xsl:text>
+      <!-- total number of physical pages, independent of numbering restarts
+           (zref-abspage writes it to the aux as \@abspage@last) -->
+      <xsl:text>\makeatletter\providecommand\@abspage@last{1}\newcommand{\docxpagecount}{\@abspage@last}\makeatother&#xa;</xsl:text>
+      <!-- resolve the header/footer fonts once, in the preamble: a missing font
+           must not trigger a luaotfload reload from inside the output routine -->
+      <xsl:for-each select="$docx-hf-fonts">
+        <xsl:text>\ifPDFTeX\else\IfFontExistsTF{</xsl:text>
+        <xsl:value-of select="."/>
+        <xsl:text>}{\newcommand{\docxhffont</xsl:text>
+        <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', position(), 1)"/>
+        <xsl:text>}{\fontspec{</xsl:text>
+        <xsl:value-of select="."/>
+        <xsl:text>}}}{\newcommand{\docxhffont</xsl:text>
+        <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', position(), 1)"/>
+        <xsl:text>}{}}\fi&#xa;</xsl:text>
+      </xsl:for-each>
+      <!-- Word starts a new section's content on the next page whatever its parity;
+           without this, scrbook's twoside \chapter inserts blank verso pages -->
+      <xsl:text>\KOMAoption{open}{any}&#xa;</xsl:text>
+      <!-- place the header baseline near Word's header line (measured: rule at 62pt
+           below the page top) and the footer text above the page bottom as in Word -->
+      <xsl:text>\geometry{headheight=14pt,headsep=36.9pt,footskip=20pt}&#xa;</xsl:text>
+      <!-- the classification marking (e.g. red OFFICIAL, page-anchored text box) is
+           shared by every section's header part: keep it as a macro so it can be
+           re-added after the shipout stack is cleared for a later section -->
+      <xsl:text>\newcommand{\docxmarking}{%&#xa;</xsl:text>
+      <xsl:variable name="hdr" select="$docx-headers[1]" as="element(dbk:div)"/>
       <!-- marking text: baseline 30pt below the page top (Word header distance 25.5pt).
            Word anchors the classification-marking textbox centered on the page
            (mso-position-horizontal:center relative to page) -->
@@ -212,19 +241,101 @@
         <xsl:text>}&#xa;</xsl:text>
       </xsl:if>
       <xsl:text>}&#xa;</xsl:text>
-      <xsl:apply-templates select="(//dbk:div[@role eq 'docx2hub:header'][@condition eq 'default'])[1]//dbk:imagedata[@fileref][@css:width][ancestor::dbk:div[@role eq 'docx2hub:header']]" mode="#current"/>
-      <xsl:apply-templates select="(//dbk:div[@role eq 'docx2hub:header'][@condition eq 'default'])[1]//dbk:imagedata[svg:svg][ancestor::dbk:div[@role eq 'docx2hub:header']]" mode="#current"/>
       <xsl:text>}&#xa;</xsl:text>
-      <xsl:variable name="ftr" select="(//dbk:div[@role eq 'docx2hub:footer'][@condition eq 'default'])[1]" as="element(dbk:div)?"/>
-      <xsl:if test="$ftr">
-        <xsl:text>\AddToShipoutPicture{%&#xa;</xsl:text>
-        <!-- vision text: left margin, baseline 121pt above the page bottom -->
-        <xsl:text>  \put(56.7,121){%&#xa;</xsl:text>
-        <xsl:apply-templates select="$ftr/node()" mode="#current"/>
-        <xsl:text>}&#xa;</xsl:text>
-        <xsl:apply-templates select="$ftr//dbk:imagedata[@fileref][@css:width][ancestor::dbk:div[@role eq 'docx2hub:footer']]" mode="#current"/>
-        <xsl:text>}&#xa;</xsl:text>
+      <xsl:text>\AddToShipoutPicture{\docxmarking}&#xa;</xsl:text>
+      <!-- cover section (section 1): logo in the header, vision text and banner in
+           the footer, at absolute positions matching the Word anchoring -->
+      <xsl:text>\AddToShipoutPicture{%&#xa;</xsl:text>
+      <xsl:apply-templates select="$docx-headers[1]//dbk:imagedata[@fileref][@css:width][ancestor::dbk:div[@role eq 'docx2hub:header']]" mode="#current"/>
+      <xsl:apply-templates select="$docx-headers[1]//dbk:imagedata[svg:svg][ancestor::dbk:div[@role eq 'docx2hub:header']]" mode="#current"/>
+      <xsl:variable name="cover-ftr" select="$docx-footers[1]" as="element(dbk:div)?"/>
+      <xsl:if test="$cover-ftr">
+        <xsl:if test="$cover-ftr//dbk:phrase[normalize-space(.)] or $cover-ftr/text()[normalize-space(.)]">
+          <!-- vision text: left margin, baseline 121pt above the page bottom -->
+          <xsl:text>  \put(56.7,121){%&#xa;</xsl:text>
+          <xsl:apply-templates select="$cover-ftr/node()" mode="#current"/>
+          <xsl:text>}&#xa;</xsl:text>
+        </xsl:if>
+        <xsl:apply-templates select="$cover-ftr//dbk:imagedata[@fileref][@css:width][ancestor::dbk:div[@role eq 'docx2hub:footer']]" mode="#current"/>
       </xsl:if>
+      <xsl:text>}&#xa;</xsl:text>
+      <!-- sections 2..n: one fancyhdr page style per section, built from that
+           section's default header/footer parts -->
+      <xsl:for-each select="$docx-headers[position() ge 2]">
+        <xsl:variable name="section" select="position() + 1" as="xs:integer"/>
+        <xsl:variable name="hdr" select="." as="element(dbk:div)"/>
+        <xsl:variable name="ftr" select="$docx-footers[$section]" as="element(dbk:div)?"/>
+        <xsl:variable name="footer-entries" as="element(dbk:entry)*"
+                      select="$ftr//dbk:entry[dbk:para[normalize-space(string(.))]]"/>
+        <xsl:variable name="footer-paras" as="element(dbk:para)*"
+                      select="$ftr/dbk:para[normalize-space(string(.))]"/>
+        <xsl:text>\fancypagestyle{docx-section-</xsl:text>
+        <xsl:value-of select="$section"/>
+        <xsl:text>}{%&#xa;  \fancyhf{}%&#xa;</xsl:text>
+        <!-- header: the section's header text (marking text box and images are
+             rendered separately, at absolute positions) -->
+        <xsl:for-each select="$hdr/dbk:para[normalize-space(string(.))]
+                                    [exists(node()[not(self::dbk:tabs)][not(self::dbk:phrase[@role eq 'hub:foreign'])][not(self::dbk:phrase[dbk:phrase[@role eq 'hub:foreign']][not(text()[normalize-space()])])][normalize-space(string(.))])]">
+          <xsl:text>  \fancyhead[</xsl:text>
+          <xsl:value-of select="if (@css:text-align eq 'right') then 'R'
+                                else if (@css:text-align eq 'center') then 'C'
+                                else 'L'"/>
+          <xsl:text>]{</xsl:text>
+          <xsl:apply-templates select="node()[not(self::dbk:tabs)][not(self::dbk:phrase[@role eq 'hub:foreign'])][not(self::dbk:phrase[dbk:phrase[@role eq 'hub:foreign']][not(text()[normalize-space()])])]" mode="#current"/>
+          <xsl:text>}%&#xa;</xsl:text>
+        </xsl:for-each>
+        <!-- footer: Word layouts the footer as a borderless table; first text cell
+             left, last text cell right -->
+        <xsl:for-each select="$footer-entries">
+          <xsl:if test="position() eq 1">
+            <xsl:text>  \fancyfoot[L]{</xsl:text>
+            <xsl:apply-templates select="dbk:para[1]/node()[not(self::dbk:tabs)][not(self::dbk:phrase[@role eq 'hub:foreign'])][not(self::dbk:phrase[dbk:phrase[@role eq 'hub:foreign']][not(text()[normalize-space()])])]" mode="#current"/>
+            <xsl:text>}%&#xa;</xsl:text>
+          </xsl:if>
+          <xsl:if test="position() eq last() and position() gt 1">
+            <xsl:text>  \fancyfoot[R]{</xsl:text>
+            <xsl:apply-templates select="dbk:para[1]/node()[not(self::dbk:tabs)][not(self::dbk:phrase[@role eq 'hub:foreign'])][not(self::dbk:phrase[dbk:phrase[@role eq 'hub:foreign']][not(text()[normalize-space()])])]" mode="#current"/>
+            <xsl:text>}%&#xa;</xsl:text>
+          </xsl:if>
+        </xsl:for-each>
+        <xsl:for-each select="$footer-paras">
+          <xsl:text>  \fancyfoot[</xsl:text>
+          <xsl:value-of select="if (@css:text-align eq 'right') then 'R'
+                                else if (@css:text-align eq 'center') then 'C'
+                                else 'L'"/>
+          <xsl:text>]{</xsl:text>
+          <xsl:apply-templates select="node()[not(self::dbk:tabs)][not(self::dbk:phrase[@role eq 'hub:foreign'])][not(self::dbk:phrase[dbk:phrase[@role eq 'hub:foreign']][not(text()[normalize-space()])])]" mode="#current"/>
+          <xsl:text>}%&#xa;</xsl:text>
+        </xsl:for-each>
+        <!-- rules: Word draws the header para's bottom border and the footer cells'
+             top border in the section's rule color -->
+        <xsl:variable name="head-rule-width" select="replace(($hdr/dbk:para/@css:border-bottom-width)[1], '[a-z]+$', '')" as="xs:string?"/>
+        <xsl:choose>
+          <xsl:when test="normalize-space($head-rule-width)">
+            <xsl:text>  \renewcommand{\headrulewidth}{</xsl:text>
+            <xsl:value-of select="$head-rule-width"/>
+            <xsl:text>pt}&#xa;</xsl:text>
+          </xsl:when>
+          <xsl:otherwise>
+            <xsl:text>  \renewcommand{\headrulewidth}{0pt}&#xa;</xsl:text>
+          </xsl:otherwise>
+        </xsl:choose>
+        <xsl:variable name="foot-rule-width" select="replace(($footer-entries/@css:border-top-width)[1], '[a-z]+$', '')" as="xs:string?"/>
+        <xsl:choose>
+          <xsl:when test="normalize-space($foot-rule-width)">
+            <xsl:text>  \renewcommand{\footrulewidth}{</xsl:text>
+            <xsl:value-of select="$foot-rule-width"/>
+            <xsl:text>pt}&#xa;</xsl:text>
+          </xsl:when>
+          <xsl:otherwise>
+            <xsl:text>  \renewcommand{\footrulewidth}{0pt}&#xa;</xsl:text>
+          </xsl:otherwise>
+        </xsl:choose>
+        <xsl:text>}&#xa;</xsl:text>
+      </xsl:for-each>
+      <!-- chapter-opening pages (and anything KOMA resets to plain) stay clean -->
+      <xsl:text>\fancypagestyle{plain}{\fancyhf{}\renewcommand{\headrulewidth}{0pt}\renewcommand{\footrulewidth}{0pt}}&#xa;</xsl:text>
+      <xsl:text>\pagestyle{empty}&#xa;</xsl:text>
     </xsl:if>
     <xsl:sequence select="if(exists($langs)) 
                           then string-join(xml2tex:langs-to-latex-pkg( $langs ), '&#xa;') 
@@ -242,6 +353,7 @@
   <ns prefix="css" uri="http://www.w3.org/1996/css"/>
   <ns prefix="svg" uri="http://www.w3.org/2000/svg"/>
   <ns prefix="docx2tex" uri="http://transpect.io/docx2tex"/>
+  <ns prefix="docx2hub" uri="http://transpect.io/docx2hub"/>
   <ns prefix="mml2tex" uri="http://transpect.io/mml2tex"/>
   <ns prefix="tr" uri="http://transpect.io"/>
 
@@ -1651,12 +1763,27 @@
   </template>
 
   <!-- header/footer text keeps its Word font (e.g. Calibri for classification
-       markings) when compiled with LuaLaTeX/XeLaTeX; fontspec is loaded only there -->
+       markings) when compiled with LuaLaTeX/XeLaTeX. The availability check must
+       not run inside the output routine (a missing font triggers a luaotfload
+       database reload there, which fails), so each font is resolved once in the
+       preamble into a \docxhffont<n> macro. -->
+  <xsl:variable name="docx-hf-fonts" as="xs:string*"
+                select="distinct-values(//dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')]//dbk:phrase/@css:font-family)"/>
   <template context="dbk:phrase[ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')]][@css:font-family]">
-    <xsl:text>\ifPDFTeX\else\fontspec{</xsl:text>
-    <xsl:value-of select="@css:font-family"/>
-    <xsl:text>}\fi </xsl:text>
+    <xsl:text>\ifPDFTeX\else\docxhffont</xsl:text>
+    <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', index-of($docx-hf-fonts, @css:font-family), 1)"/>
+    <xsl:text>\fi </xsl:text>
     <xsl:next-match/>
+  </template>
+
+  <!-- Word PAGE / NUMPAGES field results (tagged by docx2hub) regenerate as live
+       numbers, so they match the LaTeX pagination instead of Word's cached values -->
+  <template context="dbk:phrase[@role eq 'hub:page-number']">
+    <text>\thepage </text>
+  </template>
+
+  <template context="dbk:phrase[@role eq 'hub:page-count']">
+    <text>\docxpagecount </text>
   </template>
 
   <!-- font size for the whole paragraph, including its \par (Word derives the
@@ -1731,20 +1858,62 @@
     <xsl:text>}</xsl:text>
   </template>
 
-  <!-- Word section breaks (nextPage) become page breaks -->
-  <template context="dbk:para[@css:page-break-after eq 'always'][not(parent::dbk:listitem)]">
+  <!-- manual page breaks (not Word section boundaries) -->
+  <template context="dbk:para[@css:page-break-after eq 'always'][not(@docx2hub:section-end eq 'true')][not(parent::dbk:listitem)]">
     <xsl:next-match/>
     <xsl:text>\clearpage&#xa;</xsl:text>
   </template>
 
-  <!-- end the footer-band reservation of the cover at the first section break -->
-  <template context="dbk:para[@css:page-break-after eq 'always'][not(parent::dbk:listitem)][not(preceding::dbk:para[@css:page-break-after eq 'always'])]">
-    <xsl:next-match/>
-    <xsl:if test="$cover-footer-reserve">
-      <xsl:text>\addtolength{\textheight}{</xsl:text>
-      <xsl:value-of select="replace($cover-footer-reserve, '-', '')"/>
+  <!-- Word section breaks: new page, the next section's page style and page-number
+       format/restart (surfaced by docx2hub as css:page-number-* on this para) -->
+  <template context="dbk:para[@css:page-break-after eq 'always'][@docx2hub:section-end eq 'true'][not(parent::dbk:listitem)]">
+    <xsl:variable name="break-index" select="count(preceding::dbk:para[@docx2hub:section-end eq 'true']) + 1" as="xs:integer"/>
+    <xsl:variable name="section" select="$break-index + 1" as="xs:integer"/>
+    <xsl:variable name="docx-headers" select="//dbk:div[@role eq 'docx2hub:header'][@condition eq 'default']" as="element(dbk:div)*"/>
+    <xsl:variable name="docx-footers" select="//dbk:div[@role eq 'docx2hub:footer'][@condition eq 'default']" as="element(dbk:div)*"/>
+    <xsl:text>\clearpage&#xa;</xsl:text>
+    <xsl:if test="$break-index eq 1">
+      <!-- the cover artwork (logo, vision band) ends with the cover section; the
+           classification marking applies to every page and is re-added -->
+      <xsl:text>\ClearShipoutPicture&#xa;\AddToShipoutPicture{\docxmarking}&#xa;</xsl:text>
+      <xsl:if test="$cover-footer-reserve">
+        <xsl:text>\addtolength{\textheight}{</xsl:text>
+        <xsl:value-of select="replace($cover-footer-reserve, '-', '')"/>
+        <xsl:text>}&#xa;</xsl:text>
+      </xsl:if>
+    </xsl:if>
+    <xsl:if test="@css:page-number-format or @css:page-number-start">
+      <xsl:text>\pagenumbering{</xsl:text>
+      <xsl:value-of select="if (@css:page-number-format eq 'lowerRoman') then 'roman'
+                            else if (@css:page-number-format eq 'upperRoman') then 'Roman'
+                            else if (@css:page-number-format eq 'lowerLetter') then 'alph'
+                            else if (@css:page-number-format eq 'upperLetter') then 'Alph'
+                            else 'arabic'"/>
+      <xsl:text>}&#xa;</xsl:text>
+      <xsl:if test="@css:page-number-start[. castable as xs:integer][xs:integer(.) ne 1]">
+        <xsl:text>\setcounter{page}{</xsl:text>
+        <xsl:value-of select="xs:integer(@css:page-number-start)"/>
+        <xsl:text>}&#xa;</xsl:text>
+      </xsl:if>
+    </xsl:if>
+    <xsl:if test="exists($docx-headers[$section])">
+      <xsl:text>\pagestyle{docx-section-</xsl:text>
+      <xsl:value-of select="$section"/>
+      <xsl:text>}\renewcommand{\chapterpagestyle}{docx-section-</xsl:text>
+      <xsl:value-of select="$section"/>
       <xsl:text>}&#xa;</xsl:text>
     </xsl:if>
+    <!-- the new section's absolutely positioned footer art (e.g. a full-bleed band),
+         in addition to the shared marking -->
+    <xsl:for-each select="$docx-footers[$section]">
+      <xsl:variable name="band-images" as="element(dbk:imagedata)*"
+                    select=".//dbk:imagedata[@fileref][@css:width][ancestor::dbk:div[@role eq 'docx2hub:footer']]"/>
+      <xsl:if test="exists($band-images)">
+        <xsl:text>\AddToShipoutPicture{%&#xa;</xsl:text>
+        <xsl:apply-templates select="$band-images" mode="#current"/>
+        <xsl:text>}&#xa;</xsl:text>
+      </xsl:if>
+    </xsl:for-each>
   </template>
 
   <!-- Word tables flow inline where they appear, they are not floats -->
