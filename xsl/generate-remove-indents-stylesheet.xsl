@@ -16,7 +16,7 @@
   <xsl:param name="debug" select="'no'"/>
   <xsl:param name="debug-dir-uri" select="'debug'"/>
   
-  <xsl:param name="latex-section-regex" select="'chapter|section'" as="xs:string"/>
+  <xsl:param name="latex-section-regex" select="'chapter|section|paragraph'" as="xs:string"/>
   
   <xsl:include href="http://transpect.io/xml2tex/xsl/handle-namespace.xsl"/>
   
