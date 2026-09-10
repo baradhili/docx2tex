@@ -180,11 +180,32 @@
          rendered at absolute page positions via eso-pic, matching the Word anchoring
          (OFFICIAL line, logo, separator rule at top; vision text and banner at bottom) -->
     <xsl:if test="(//dbk:div[@role eq 'docx2hub:header'][@condition eq 'default'])[1]">
+      <xsl:variable name="hdr" select="(//dbk:div[@role eq 'docx2hub:header'][@condition eq 'default'])[1]" as="element(dbk:div)"/>
       <xsl:text>\usepackage{eso-pic}&#xa;\pagestyle{empty}&#xa;</xsl:text>
       <xsl:text>\AddToShipoutPicture{%&#xa;</xsl:text>
-      <!-- OFFICIAL text: left margin, baseline 30pt below the page top (Word header distance 25.5pt) -->
-      <xsl:text>  \put(56.7,</xsl:text><xsl:value-of select="number(replace(/dbk:hub/@css:page-height, '[a-z]+$', '')) - 30"/><xsl:text>){%&#xa;</xsl:text>
-      <xsl:apply-templates select="(//dbk:div[@role eq 'docx2hub:header'][@condition eq 'default'])[1]/node()" mode="#current"/>
+      <!-- marking text: baseline 30pt below the page top (Word header distance 25.5pt).
+           Word anchors the classification-marking textbox centered on the page
+           (mso-position-horizontal:center relative to page) -->
+      <xsl:variable name="marking-page-centered" as="xs:boolean"
+                    select="exists($hdr//dbk:phrase[@role eq 'hub:foreign']//@style
+                                     [contains(., 'mso-position-horizontal-relative:page')]
+                                     [contains(., 'mso-position-horizontal:center')])"/>
+      <xsl:choose>
+        <xsl:when test="$marking-page-centered">
+          <xsl:text>  \put(\LenToUnit{0.5\paperwidth},</xsl:text>
+          <xsl:value-of select="number(replace(/dbk:hub/@css:page-height, '[a-z]+$', '')) - 30"/>
+          <xsl:text>){\makebox[0pt][c]{%&#xa;</xsl:text>
+        </xsl:when>
+        <xsl:otherwise>
+          <xsl:text>  \put(56.7,</xsl:text>
+          <xsl:value-of select="number(replace(/dbk:hub/@css:page-height, '[a-z]+$', '')) - 30"/>
+          <xsl:text>){%&#xa;</xsl:text>
+        </xsl:otherwise>
+      </xsl:choose>
+      <xsl:apply-templates select="$hdr/node()" mode="#current"/>
+      <xsl:if test="$marking-page-centered">
+        <xsl:text>}&#xa;</xsl:text>
+      </xsl:if>
       <xsl:text>}&#xa;</xsl:text>
       <xsl:apply-templates select="(//dbk:div[@role eq 'docx2hub:header'][@condition eq 'default'])[1]//dbk:imagedata[@fileref][@css:width][ancestor::dbk:div[@role eq 'docx2hub:header']]" mode="#current"/>
       <xsl:apply-templates select="(//dbk:div[@role eq 'docx2hub:header'][@condition eq 'default'])[1]//dbk:imagedata[svg:svg][ancestor::dbk:div[@role eq 'docx2hub:header']]" mode="#current"/>
@@ -1622,6 +1643,15 @@
     <xsl:text>}</xsl:text>
   </template>
 
+  <!-- header/footer text keeps its Word font (e.g. Calibri for classification
+       markings) when compiled with LuaLaTeX/XeLaTeX; fontspec is loaded only there -->
+  <template context="dbk:phrase[ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')]][@css:font-family]">
+    <xsl:text>\ifPDFTeX\else\fontspec{</xsl:text>
+    <xsl:value-of select="@css:font-family"/>
+    <xsl:text>}\fi </xsl:text>
+    <xsl:next-match/>
+  </template>
+
   <!-- font size for the whole paragraph, including its \par (Word derives the
        line height from the tallest run; runs override the paragraph style) -->
   <template context="dbk:para[exists(.//dbk:phrase/@css:font-size) or exists(key('style', @role)/@css:font-size)]">
@@ -1641,6 +1671,23 @@
     <xsl:if test="exists($eff-size) and $eff-size ne 12">
       <xsl:text>}</xsl:text>
     </xsl:if>
+  </template>
+
+  <!-- paragraph colour from a run style override or the paragraph style; \color
+       declaration instead of \textcolor so it survives the paragraph break -->
+  <template context="dbk:para[(@css:color, key('style', @role)/@css:color)[1]]
+                             [not(every $i in tr:hex-rgb-color-to-ints((@css:color, key('style', @role)/@css:color)[1]) 
+                                  satisfies $i &lt; 35)]
+                             [not(@role = ('ZFinlineequation', 'ZFequation', 'ZFVerweis', 'ZFCaption', 'NOTE-CE', 'NOTE-TS'))]
+                             [not(ancestor-or-self::dbk:link)]">
+    <xsl:text>{\color{</xsl:text>
+    <xsl:value-of select="for $color-code in (@css:color, key('style', @role)/@css:color)[1] 
+                          return if (exists(tr:color-hex-rgb-to-keyword($color-code)))
+                                 then tr:color-hex-rgb-to-keyword($color-code)[1]
+                                 else concat('color-', upper-case(substring-after($color-code, '#')))"/>
+    <xsl:text>} </xsl:text>
+    <xsl:next-match/>
+    <xsl:text>}</xsl:text>
   </template>
 
   <!-- paragraph spacing: explicit margin-top -->
