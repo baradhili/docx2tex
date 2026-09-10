@@ -110,6 +110,11 @@
     \usepackage{anyfontsize}
     <xsl:if test="//dbk:imagedata">
       <xsl:text>\usepackage{graphicx}&#xa;</xsl:text>
+      <!-- savebox for srcRect-cropped images; dedicated and without @ because the
+           crop code is used in the document body where @ is not a letter -->
+      <xsl:if test="//dbk:imagedata[@css:crop-top or @css:crop-right or @css:crop-bottom or @css:crop-left]">
+        <xsl:text>\newsavebox{\docxcroppedimagebox}&#xa;</xsl:text>
+      </xsl:if>
     </xsl:if>
     <xsl:if test="/dbk:hub/@css:page-width">
       <xsl:text>\usepackage{geometry}&#xa;</xsl:text>
@@ -1782,8 +1787,8 @@
     <xsl:variable name="b" as="xs:double" select="number(($img/@css:crop-bottom ! substring-before(., '%'), '0')[1]) div 100"/>
     <xsl:sequence select="if ($l eq 0 and $t eq 0 and $r eq 0 and $b eq 0)
                           then '\includegraphics['
-                          else concat('\sbox\@tempboxa{\includegraphics{', replace($img/@fileref, '([%#])', '\\$1'), '}}%', '&#xa;',
-                                      '\includegraphics[trim={\dimexpr', $l, '\wd\@tempboxa\relax} {\dimexpr', $b, '\ht\@tempboxa\relax} {\dimexpr', $r, '\wd\@tempboxa\relax} {\dimexpr', $t, '\ht\@tempboxa\relax}, clip, ')"/>
+                          else concat('\sbox\docxcroppedimagebox{\includegraphics{', replace($img/@fileref, '([%#])', '\\$1'), '}}%', '&#xa;',
+                                      '\includegraphics[trim={\dimexpr', $l, '\wd\docxcroppedimagebox\relax} {\dimexpr', $b, '\ht\docxcroppedimagebox\relax} {\dimexpr', $r, '\wd\docxcroppedimagebox\relax} {\dimexpr', $t, '\ht\docxcroppedimagebox\relax}, clip, ')"/>
   </xsl:function>
 
   <!-- logo in the Word header: left margin minus the Word anchor offset (-9.75pt),
