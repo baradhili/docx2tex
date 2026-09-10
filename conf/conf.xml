@@ -75,6 +75,9 @@
     % 
     \documentclass[12pt]{scrbook}
     \usepackage{iftex}
+    % txfonts also selects Times text defaults; load it before fontspec/tgheros
+    % so the docx fonts win for text (math setup is unaffected by load order)
+    \usepackage{txfonts}
     \ifPDFTeX
       \usepackage[T1]{fontenc}
       \usepackage[utf8]{inputenc}
@@ -123,7 +126,6 @@
     \usepackage{wasysym}
     \usepackage{isomath}
     \usepackage{mathtools}
-    \usepackage{txfonts}
     \usepackage{upgreek}
     \usepackage{enumerate}
     \usepackage{tensor}
