@@ -93,8 +93,15 @@
     % 
     \documentclass[12pt]{scrbook}
     \usepackage{iftex}
-    % txfonts also selects Times text defaults; load it before fontspec/tgheros
-    % so the docx fonts win for text (math setup is unaffected by load order)
+    \usepackage{amsmath}
+    \usepackage{amssymb}
+    \usepackage{amsfonts}
+    \usepackage{amsxtra}
+    \usepackage{wasysym}
+    \usepackage{isomath}
+    \usepackage{mathtools}
+    % txfonts must load after amsmath (its \iint etc. collide with amsmath's
+    % otherwise) and before fontspec/tgheros so the docx fonts win for text
     \usepackage{txfonts}
     \ifPDFTeX
       \usepackage[T1]{fontenc}
@@ -159,13 +166,6 @@
         <xsl:text>\usepackage{tipa}&#xa;</xsl:text>
       </xsl:otherwise>
     </xsl:choose>
-    \usepackage{amsmath}
-    \usepackage{amssymb}
-    \usepackage{amsfonts}
-    \usepackage{amsxtra}
-    \usepackage{wasysym}
-    \usepackage{isomath}
-    \usepackage{mathtools}
     \usepackage{upgreek}
     \usepackage{enumerate}
     \usepackage{tensor}
