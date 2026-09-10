@@ -7,15 +7,18 @@
 [submodule "docx2hub"]
 	path = docx2hub
 	url = https://github.com/baradhili/docx2hub
+	branch = front-page-layout
 [submodule "evolve-hub"]
 	path = evolve-hub
 	url = https://github.com/transpect/evolve-hub
 [submodule "xml2tex"]
 	path = xml2tex
 	url = https://github.com/baradhili/xml2tex
+	branch = front-page-layout
 [submodule "mml2tex"]
 	path = mml2tex
 	url = https://github.com/baradhili/mml2tex
+	branch = front-page-layout
 [submodule "htmlreports"]
 	path = htmlreports
 	url = https://github.com/transpect/htmlreports
