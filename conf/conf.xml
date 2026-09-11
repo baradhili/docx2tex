@@ -178,8 +178,51 @@
     \usepackage{arydshln}
     <!-- approximate the typical Word 'Normal' style spacing after of 0.5 line (170tw = 8.5pt) -->
     <xsl:text>\setlength{\parskip}{8.5pt}&#xa;\setlength{\parindent}{0pt}&#xa;</xsl:text>
-    <xsl:if test="//dbk:div[@role eq 'hub:index'][1]">
-      <xsl:text>\usepackage{makeidx}&#xa;\makeindex&#xa;</xsl:text>
+    <!-- match the LaTeX sectioning commands to the docx Heading{n} styles: one
+         titlesec \titleformat per level, generated from the styles' css:rule
+         (font size, weight, colour). Chapters become 'straight' (inline number,
+         no page break), like Word headings; the vertical spacing stays with the
+         paragraphs' own Word margins. -->
+    <xsl:if test="exists(//css:rule[matches(@remap, '^h[1-6]$')])">
+      <xsl:text>\usepackage{titlesec}&#xa;</xsl:text>
+      <xsl:text>\titleclass{\chapter}{straight}&#xa;</xsl:text>
+      <xsl:for-each select="(for $l in 1 to 6
+                               return (//css:rule[@name eq concat('Heading', $l)],
+                                       //css:rule[@remap eq concat('h', $l)])[1])">
+        <xsl:variable name="level" select="xs:integer(substring(@remap, 2))" as="xs:integer"/>
+        <xsl:variable name="cmd" select="('chapter', 'section', 'subsection', 'subsubsection', 'paragraph', 'subparagraph')[$level]" as="xs:string"/>
+        <xsl:variable name="size" select="number(replace(@css:font-size, '[a-z]+$', ''))[. gt 0]" as="xs:double?"/>
+        <xsl:text>\titleformat{\</xsl:text>
+        <xsl:value-of select="$cmd"/>
+        <xsl:text>}{</xsl:text>
+        <xsl:if test="exists($size)">
+          <xsl:text>\fontsize{</xsl:text>
+          <xsl:value-of select="$size"/>
+          <xsl:text>pt}{</xsl:text>
+          <xsl:value-of select="round($size * 1.15 * 10) div 10"/>
+          <xsl:text>pt}\selectfont</xsl:text>
+        </xsl:if>
+        <xsl:if test="@css:font-weight eq 'bold'">
+          <xsl:text>\bfseries</xsl:text>
+        </xsl:if>
+        <xsl:if test="@css:color">
+          <xsl:variable name="heading-color" select="@css:color" as="xs:string"/>
+          <xsl:text>\color{</xsl:text>
+          <xsl:value-of select="if (exists(tr:color-hex-rgb-to-keyword($heading-color)))
+                                then tr:color-hex-rgb-to-keyword($heading-color)[1]
+                                else concat('color-', upper-case(substring-after($heading-color, '#')))"/>
+          <xsl:text>}</xsl:text>
+        </xsl:if>
+        <xsl:text>}{\the</xsl:text>
+        <xsl:value-of select="$cmd"/>
+        <xsl:if test="$level eq 1">
+          <xsl:text>.</xsl:text>
+        </xsl:if>
+        <xsl:text>}{0.6em}{}&#xa;</xsl:text>
+        <xsl:text>\titlespacing*{\</xsl:text>
+        <xsl:value-of select="$cmd"/>
+        <xsl:text>}{0pt}{0pt}{0pt}&#xa;</xsl:text>
+      </xsl:for-each>
     </xsl:if>
     <!-- Word headers/footers (included by docx2hub with include-header-and-footer=yes):
          every section's default header/footer part becomes a fancyhdr page style,
@@ -1170,7 +1213,9 @@
   
   <template context="dbk:div[@role eq 'hub:toc']">
     <rule break-after="2">
-      <text>\tableofcontents</text>
+      <!-- Word starts the table of contents at the top of a page; with straight
+           (non page-breaking) chapters the LaTeX TOC must break explicitly -->
+      <text>\clearpage&#xa;\tableofcontents</text>
     </rule>
   </template>
 
