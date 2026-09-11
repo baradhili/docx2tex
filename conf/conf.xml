@@ -176,8 +176,13 @@
       <xsl:value-of select="concat('\usepackage{', $letter-spacing-def,'}&#xa;')"/>
     </xsl:if>
     \usepackage{arydshln}
-    <!-- approximate the typical Word 'Normal' style spacing after of 0.5 line (170tw = 8.5pt) -->
-    <xsl:text>\setlength{\parskip}{8.5pt}&#xa;\setlength{\parindent}{0pt}&#xa;</xsl:text>
+    <!-- paragraph spacing = the Normal style's space-after (Word default 0 when
+         not declared), surfaced on the hub root by docx2hub -->
+    <xsl:variable name="default-parskip" as="xs:string"
+                  select="replace((/dbk:hub/@css:default-space-after, '0pt')[1], '[a-z]+$', '')"/>
+    <xsl:text>\setlength{\parskip}{</xsl:text>
+    <xsl:value-of select="$default-parskip"/>
+    <xsl:text>pt}&#xa;\setlength{\parindent}{0pt}&#xa;</xsl:text>
     <!-- a "1.5 lines" (or other) Normal style spaces the whole document (Word
          default line spacing, surfaced on the hub root by docx2hub) -->
     <xsl:if test="/dbk:hub/@css:default-line-height[. castable as xs:double][xs:double(.) gt 1]">
