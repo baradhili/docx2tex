@@ -1903,7 +1903,7 @@
   </template>
 
   <!-- paragraph spacing: explicit margin-top -->
-  <template context="dbk:para[@css:margin-top[matches(., '^[1-9]')]][not(@docx2tex:config eq 'headline')][not(ancestor::dbk:listitem)]">
+  <template context="dbk:para[@css:margin-top[matches(., '^[1-9]')]][not(@docx2tex:config eq 'headline')][preceding::dbk:para[@docx2hub:section-end eq 'true']][not(ancestor::dbk:listitem)]">
     <xsl:text>\vspace*{</xsl:text>
     <xsl:value-of select="replace(@css:margin-top, '[a-z]+$', '')"/>
     <xsl:text>pt}</xsl:text>
@@ -1911,7 +1911,7 @@
   </template>
 
   <!-- paragraph spacing: explicit margin-bottom -->
-  <template context="dbk:para[@css:margin-bottom[matches(., '^[1-9]')]][not(@docx2tex:config eq 'headline')][not(ancestor::dbk:listitem)]">
+  <template context="dbk:para[@css:margin-bottom[matches(., '^[1-9]')]][not(@docx2tex:config eq 'headline')][preceding::dbk:para[@docx2hub:section-end eq 'true']][not(ancestor::dbk:listitem)]">
     <xsl:next-match/>
     <xsl:text>\vspace{</xsl:text>
     <xsl:value-of select="replace(@css:margin-bottom, '[a-z]+$', '')"/>
@@ -1920,7 +1920,7 @@
 
   <!-- paragraph spacing: margin-top from paragraph style -->
   <template context="dbk:para[key('style', @role)/@css:margin-top[matches(., '^[1-9]')]][not(@css:margin-top)]
-                             [not(@docx2tex:config eq 'headline')][not(ancestor::dbk:listitem)]">
+                             [not(@docx2tex:config eq 'headline')][preceding::dbk:para[@docx2hub:section-end eq 'true']][not(ancestor::dbk:listitem)]">
     <xsl:text>\vspace*{</xsl:text>
     <xsl:value-of select="replace(key('style', @role)/@css:margin-top, '[a-z]+$', '')"/>
     <xsl:text>pt}</xsl:text>
@@ -1970,6 +1970,82 @@
     </xsl:if>
     <xsl:next-match/>
   </xsl:template>
+
+  <!-- Cover paragraphs (before the first Word section break): Word stacks line
+       boxes, LaTeX adds the previous line's depth and the next line's ascent, so the
+       raw space-after under/overshoots after large fonts. The cover emission
+       compensates: glue = space-after (Word's max rule; \parskip 8.5pt already
+       contributed by the paragraph break) + 0.775 x (own line height - next
+       paragraph's line height), and a page-top space-before sheds LaTeX's topskip
+       and ascent excess (Word starts big lines ~6pt below the box top). -->
+  <xsl:template name="docx2tex-cover-size" as="xs:double">
+    <xsl:sequence select="max((for $sz in (.//dbk:phrase/@css:font-size, @css:font-size, key('style', @role)/@css:font-size)
+                                 return number(replace($sz, '[a-z]+$', ''))[. = .], 12))[1]"/>
+  </xsl:template>
+
+  <template context="dbk:para[not(preceding::dbk:para[@docx2hub:section-end eq 'true'])]
+                             [@css:margin-bottom[matches(., '^[1-9]')]]
+                             [not(ancestor::dbk:listitem)]">
+    <xsl:next-match/>
+    <xsl:variable name="after" select="number(replace(@css:margin-bottom, '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="own-size" as="xs:double">
+      <xsl:for-each select=".">
+        <xsl:call-template name="docx2tex-cover-size"/>
+      </xsl:for-each>
+    </xsl:variable>
+    <xsl:variable name="next-size" as="xs:double">
+      <xsl:for-each select="following-sibling::dbk:para[1]">
+        <xsl:call-template name="docx2tex-cover-size"/>
+      </xsl:for-each>
+    </xsl:variable>
+    <xsl:variable name="next-size" select="if (empty(following-sibling::dbk:para[1])) then 12 else ($next-size, 12)[1]" as="xs:double"/>
+    <xsl:variable name="glue" select="$after - 8.5 + 0.775 * 1.15 * ($own-size - $next-size)" as="xs:double"/>
+    <xsl:if test="abs($glue) gt 0.05">
+      <xsl:text>\vspace{</xsl:text>
+      <xsl:value-of select="round($glue * 10) div 10"/>
+      <xsl:text>pt}</xsl:text>
+    </xsl:if>
+  </template>
+
+  <template context="dbk:para[not(preceding::dbk:para[@docx2hub:section-end eq 'true'])]
+                             [key('style', @role)/@css:margin-bottom[matches(., '^[0-9]')]]
+                             [not(@css:margin-bottom)]
+                             [not(ancestor::dbk:listitem)]">
+    <xsl:next-match/>
+    <xsl:variable name="after" select="number(replace(key('style', @role)/@css:margin-bottom, '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="own-size" as="xs:double">
+      <xsl:for-each select=".">
+        <xsl:call-template name="docx2tex-cover-size"/>
+      </xsl:for-each>
+    </xsl:variable>
+    <xsl:variable name="next-size" as="xs:double">
+      <xsl:for-each select="following-sibling::dbk:para[1]">
+        <xsl:call-template name="docx2tex-cover-size"/>
+      </xsl:for-each>
+    </xsl:variable>
+    <xsl:variable name="next-size" select="if (empty(following-sibling::dbk:para[1])) then 12 else ($next-size, 12)[1]" as="xs:double"/>
+    <xsl:variable name="glue" select="$after - 8.5 + 0.775 * 1.15 * ($own-size - $next-size)" as="xs:double"/>
+    <xsl:if test="abs($glue) gt 0.05">
+      <xsl:text>\vspace{</xsl:text>
+      <xsl:value-of select="round($glue * 10) div 10"/>
+      <xsl:text>pt}</xsl:text>
+    </xsl:if>
+  </template>
+
+  <template context="dbk:para[not(preceding::dbk:para[@docx2hub:section-end eq 'true'])]
+                             [@css:margin-top[matches(., '^[1-9]')]]
+                             [not(ancestor::dbk:listitem)]">
+    <xsl:variable name="before" select="number(replace(@css:margin-top, '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="own-size" as="xs:double">
+      <xsl:for-each select=".">
+        <xsl:call-template name="docx2tex-cover-size"/>
+      </xsl:for-each>
+    </xsl:variable>
+    <xsl:text>\vspace*{</xsl:text>
+    <xsl:value-of select="round(($before - 0.775 * 1.15 * $own-size - 6) * 10) div 10"/>
+    <xsl:text>pt}</xsl:text>
+    <xsl:next-match/>
+  </template>
 
   <!-- line height (multiple line spacing, e.g. Word 1.08 lines) -->
   <template context="dbk:para[@css:line-height[matches(., '^\d\.')][not(. eq '1')]]">
@@ -2098,7 +2174,27 @@
   <!-- paragraphs inside header/footer only emit inline text content (no paragraph
        breaks, no images: those are placed separately at absolute positions) -->
   <template context="dbk:para[ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')]]">
+    <xsl:variable name="hf-size" as="xs:double?"
+                  select="max(for $sz in (if (exists(.//dbk:phrase/@css:font-size))
+                                           then .//dbk:phrase/@css:font-size
+                                           else (@css:font-size, key('style', @role)/@css:font-size))
+                                       return number(replace($sz, '[a-z]+$', '')))"/>
+    <xsl:variable name="hf-bold" as="xs:boolean"
+                  select="string((@css:font-weight, key('style', @role)/@css:font-weight)[1]) eq 'bold'"/>
+    <xsl:if test="exists($hf-size) and $hf-size ne 12">
+      <xsl:text>{\fontsize{</xsl:text>
+      <xsl:value-of select="$hf-size"/>
+      <xsl:text>pt}{</xsl:text>
+      <xsl:value-of select="round($hf-size * 1.15 * 10) div 10"/>
+      <xsl:text>pt}\selectfont </xsl:text>
+    </xsl:if>
+    <xsl:if test="$hf-bold">
+      <xsl:text>\bfseries </xsl:text>
+    </xsl:if>
     <xsl:apply-templates select="node()[not(self::dbk:mediaobject or self::dbk:inlinemediaobject or self::dbk:br)]" mode="#current"/>
+    <xsl:if test="exists($hf-size) and $hf-size ne 12">
+      <xsl:text>}</xsl:text>
+    </xsl:if>
   </template>
 
   <!-- line breaks have no meaning inside absolutely positioned header/footer text -->
