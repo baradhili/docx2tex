@@ -251,24 +251,27 @@
          full-bleed bands) are rendered via eso-pic instead. -->
     <xsl:variable name="docx-headers" select="//dbk:div[@role eq 'docx2hub:header'][@condition eq 'default']" as="element(dbk:div)*"/>
     <xsl:variable name="docx-footers" select="//dbk:div[@role eq 'docx2hub:footer'][@condition eq 'default']" as="element(dbk:div)*"/>
+    <!-- resolve the document's phrase fonts (headers, footers and body runs)
+       once, in the preamble: a missing font must not trigger a luaotfload
+       reload from inside the output routine. Must not depend on the presence
+       of header/footer parts (documents without any reference the macros too) -->
+    <xsl:for-each select="$docx-hf-fonts">
+      <xsl:text>\ifPDFTeX\else\IfFontExistsTF{</xsl:text>
+      <xsl:value-of select="."/>
+      <xsl:text>}{\newfontfamily\docxhffont</xsl:text>
+      <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', position(), 1)"/>
+      <xsl:text>{</xsl:text>
+      <xsl:value-of select="."/>
+      <xsl:text>}}{\newcommand{\docxhffont</xsl:text>
+      <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', position(), 1)"/>
+      <xsl:text>}{}}\fi&#xa;</xsl:text>
+    </xsl:for-each>
+
     <xsl:if test="exists($docx-headers)">
       <xsl:text>\usepackage{eso-pic}&#xa;\usepackage{fancyhdr}&#xa;\usepackage{zref-abspage}&#xa;</xsl:text>
       <!-- total number of physical pages, independent of numbering restarts
            (zref-abspage writes it to the aux as \@abspage@last) -->
       <xsl:text>\makeatletter\providecommand\@abspage@last{1}\newcommand{\docxpagecount}{\@abspage@last}\makeatother&#xa;</xsl:text>
-      <!-- resolve the header/footer fonts once, in the preamble: a missing font
-           must not trigger a luaotfload reload from inside the output routine -->
-      <xsl:for-each select="$docx-hf-fonts">
-        <xsl:text>\ifPDFTeX\else\IfFontExistsTF{</xsl:text>
-        <xsl:value-of select="."/>
-        <xsl:text>}{\newfontfamily\docxhffont</xsl:text>
-        <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', position(), 1)"/>
-        <xsl:text>{</xsl:text>
-        <xsl:value-of select="."/>
-        <xsl:text>}}{\newcommand{\docxhffont</xsl:text>
-        <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', position(), 1)"/>
-        <xsl:text>}{}}\fi&#xa;</xsl:text>
-      </xsl:for-each>
       <!-- Word starts a new section's content on the next page whatever its parity;
            without this, scrbook's twoside \chapter inserts blank verso pages -->
       <xsl:text>\KOMAoption{open}{any}&#xa;</xsl:text>
