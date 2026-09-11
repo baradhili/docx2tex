@@ -19,7 +19,7 @@ Verification artifacts and per-issue root-cause notes live in
 `.zcode/plans/page1-diff-docx2tex-vs-onlyoffice.md` and
 `.zcode/plans/full-diff.md`.
 
-## Base repo (docx2tex) — 21 commits ahead of master
+## Base repo (docx2tex) — 22 commits ahead of master
 
 ### Word page layout → LaTeX geometry
 
@@ -166,6 +166,22 @@ Verification artifacts and per-issue root-cause notes live in
   sits ~19pt below the text; modeled with fancyhdr's `\headruleskip` (rule 62.4pt,
   text baseline ~43.5pt).
 
+### Cover paragraph spacing and vision weight
+
+- **Word style space-after, line-box compensation, bold "Our vision"** (`0b0e113`): the
+  cover gaps were Title→Subtitle 66/74pt, Subtitle→Authoring 23/110pt (the "Sub
+  headlines" style's 84pt space-after was never emitted — no margin-bottom-from-style
+  template existed), Authoring→Month 29/20pt. Word stacks line boxes while LaTeX adds
+  the previous line's depth plus the next line's ascent, so raw space-after values
+  under/overshoot after large fonts. Cover paragraphs (before the first Word section
+  break) now emit glue = space-after + 0.775 × (own − next line-height excess) with
+  `\parskip` netted out (a negative `space` when the Word space is smaller), a new
+  margin-bottom-from-style template applies style-defined spacing, and a page-top
+  space-before sheds topskip/ascent excess. All four cover anchors match the reference
+  within 2pt (Title baseline 286.1 vs 285.7pt). Header/footer paragraph content also
+  takes its style's font size and weight: "Our vision:" renders bold from the Word
+  Footer style (the run-level normal override on the rest is preserved).
+
 ### Submodule wiring
 
 - **baradhili forks** (`bb1dbca`, `237ac3d`, `7f65bb5`): `docx2hub`, `xml2tex` and
@@ -175,50 +191,18 @@ Verification artifacts and per-issue root-cause notes live in
 
 ## docx2hub fork — 7 commits ahead of master
 
-- **Accept capitalized built-in heading names when rewriting styleIds** (`86db888`):
-  Word built-in styles are stored as lowercase `heading 1`, but some authoring tools
-  write `Heading 1` (capitalized) with numeric styleIds (e.g. 1278). The case-sensitive
-  regex never matched, so paragraphs kept `_1278`-style roles that no conf template
-  recognizes and numbered headings fell through to enumerate lists. The name match and
-  the `heading ` strip in the `Heading{N}` rewrite are now case-insensitive.
-- **Surface section page-number format/restart and section boundaries** (`9d58a9d`): the
-  add-props pass captures each `sectPr`'s `w:pgNumType` as `css:page-number-*` on the
-  sectPr marker paras; wml-to-dbk flags the paragraph that ends a section
-  (`docx2hub:section-end`) and copies the page-number attributes of the section that
-  begins after the break onto it, so downstream converters can switch numbering at Word
-  section boundaries.
-- **Surface per-section page margins and header distance** (`21d7839`): each `sectPr`'s
-  `w:pgMar` (top/bottom/left/right, twips → pt) and `w:header` distance are captured as
-  `css:page-margin-*`/`css:page-header-distance` on the marker paras and copied onto the
-  section-break paragraphs (final section via the body-level sectPr), enabling
-  per-section `\newgeometry` downstream.
-
-- **Surface page geometry, header/footer part rels and section page breaks** (`305578a`):
-  the first section's `pgSz`/`pgMar` are emitted as `css:*` attributes on the hub root;
-  image relationships in header/footer parts resolve against the part's own rels
-  (`@xml:base`-based) instead of the main document rels; the docx2hub:header/footer divs
-  keep their `@xml:base` and are ordered by section-reference position (first section
-  first); the paragraph before a removed `sectPr` pseudo-paragraph is marked
-  `css:page-break-after` so Word section breaks survive into the hub.
-- **Keep embedded pictures out of the SVG renderer** (`b2cd89b`): AlternateContent drawings
-  that contain embedded pictures are no longer converted to SVG, which used to swallow the
-  logo pictures.
-- **Fix lowercase hex colours** (`ef5606a`): `docx2hub:color()` matched hash-less hex only
-  in uppercase (`[0-9A-F]{6}`), but Word writes colours lowercase — `ff0000`, `1b2546`,
-  `3d3935`, `a6a6a6` matched no branch and were silently dropped (digit-only colours like
-  `152147` worked, masking the bug). Now accepts both cases and normalises to uppercase.
-- **Surface Word image crops** (`29662fa`): `a:srcRect` values ≤ 100000 are
-  ST_Percentage in 1000ths of a percent (ISO 29500-1), not EMU — the old `css:clip`
-  formula divided by 12700 and produced nonsense, and nothing consumed it. Crops are now
-  emitted as `css:crop-top/right/bottom/left` percentages on `imagedata`, from both the
-  DrawingML `a:srcRect` and the VML `crop*` (65536th-fraction) paths.
+The fork surfaces the Word features this pipeline consumes: page geometry and
+header/footer part rels, embedded pictures kept out of the SVG renderer, lowercase hex
+colour mapping, Word image crops (`srcRect`), case-insensitive built-in heading names
+for the `Heading{N}` styleId rewrite, and per-section page numbering (`w:pgNumType`),
+page margins (`w:pgMar`) and header distances on the section-break paragraphs.
+See [docx2hub/CHANGELOG.md](docx2hub/CHANGELOG.md) for the per-commit details.
 
 ## xml2tex fork — 1 commit ahead of master
 
-- **Row shading and border rule colours in `calstable2tabular`** (`13336a5`): CALS table
-  row shading (`\rowcolor`) and per-rule border colours (`\arrayrulecolor`) are carried
-  into the generated `tabular`, so the navy header row and grey grid of Word tables render
-  as in the reference.
+CALS table row shading (`owcolor`) and border rule colours (`rrayrulecolor`) in
+`calstable2tabular`, so Word table styling (navy header rows, grey grids) renders as in
+the reference. See [xml2tex/CHANGELOG.md](xml2tex/CHANGELOG.md).
 
 ## mml2tex fork
 
