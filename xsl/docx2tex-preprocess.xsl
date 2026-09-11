@@ -221,10 +221,63 @@
   
   <xsl:variable name="headline-paras" select="for $i in //para[@docx2tex:config eq 'headline'] return generate-id($i)" as="xs:string*"/>
   
+  <xsl:variable name="headline-numbers" as="xs:string*"
+                select="docx2tex:number-headings(//para[@docx2tex:config eq 'headline'], ())"/>
+  
+  <!-- The effective outline level of a heading paragraph. Word numbers multilevel
+       headings with one number component per level ("2.1" is a level-2 heading,
+       even when the paragraph uses the Heading 1 style), so trust a purely numeric
+       Word identifier first, then the digit in the (heading) role name. -->
+  <xsl:function name="docx2tex:heading-level" as="xs:integer">
+    <xsl:param name="para" as="element()"/>
+    <xsl:variable name="identifier" as="xs:string?"
+                  select="normalize-space($para/phrase[@role = ('docx2tex:identifier', 'hub:identifier')][1])"/>
+    <xsl:variable name="identifier-number" as="xs:string?"
+                  select="if (ends-with($identifier, '.'))
+                          then substring($identifier, 1, string-length($identifier) - 1)
+                          else $identifier"/>
+    <xsl:variable name="role-level" as="xs:integer?"
+                  select="for $n in replace($para/@role, '\D', '')
+                          return if (matches($n, '^\d+$')) then xs:integer($n) else ()"/>
+    <xsl:sequence select="(if (matches($identifier, '^\d+(\.\d+)*\.?$'))
+                            then count(tokenize($identifier-number, '\.'))
+                            else (),
+                          $role-level,
+                          1)[1]"/>
+  </xsl:function>
+  
+  <!-- the numbers ("1", "1.1", …) that LaTeX will assign to the headline paras -->
+  <xsl:function name="docx2tex:number-headings" as="xs:string*">
+    <xsl:param name="paras" as="element()*"/>
+    <xsl:param name="counters" as="xs:integer*"/>
+    <xsl:if test="exists($paras)">
+      <xsl:variable name="level" select="docx2tex:heading-level($paras[1])" as="xs:integer"/>
+      <xsl:variable name="new-counters" as="xs:integer*"
+                    select="(subsequence($counters, 1, $level - 1),
+                             (if (count($counters) ge $level) then $counters[$level] else 0) + 1)"/>
+      <xsl:sequence select="(string-join($new-counters, '.'),
+                            docx2tex:number-headings(subsequence($paras, 2), $new-counters))"/>
+    </xsl:if>
+  </xsl:function>
+  
   <xsl:template match="para[@docx2tex:config eq 'headline']" mode="docx2tex-preprocess">
+    <xsl:variable name="pos" select="index-of($headline-paras, generate-id(.))" as="xs:integer"/>
+    <xsl:variable name="level" select="docx2tex:heading-level(.)" as="xs:integer"/>
+    <xsl:variable name="role-level" as="xs:integer?"
+                  select="for $n in replace(@role, '\D', '')
+                          return if (matches($n, '^\d+$')) then xs:integer($n) else ()"/>
     <xsl:copy>
-      <xsl:apply-templates select="@*, node() except (phrase[@role eq 'docx2tex:identifier']
-                                                     |phrase[@role eq 'tab'][preceding-sibling::*[1][self::phrase[@role eq 'docx2tex:identifier']]])" mode="docx2tex-preprocess"/>
+      <!-- retitle when the effective level differs from the style's level; the role
+           keeps resolving to its css:rule (style properties) in all other cases -->
+      <xsl:attribute name="role"
+                     select="if (not($role-level eq $level)) then concat('Heading', $level) else string(@role)"/>
+      <xsl:apply-templates select="@* except @role, node() except (phrase[@role eq 'docx2tex:identifier']
+                                                     |phrase[@role eq 'tab'][preceding-sibling::*[1][self::phrase[@role eq 'docx2tex:identifier']]])" mode="docx2tex-preprocess">
+        <xsl:with-param name="strip-literal-heading-number" as="xs:string?" tunnel="yes"
+                        select="if (exists($headline-numbers[$pos]))
+                                then concat(replace($headline-numbers[$pos], '\.', '\\.'), '[.&#xa0; \t]+')
+                                else ()"/>
+      </xsl:apply-templates>
       <!-- add label -->
       <xsl:for-each select="phrase[@role = ('docx2tex:identifier', 'hub:identifier')][1]">
         <xsl:processing-instruction name="latex" select="concat('\label{mark-', (.[string-length() gt 0], 
@@ -232,6 +285,27 @@
       </xsl:for-each>
     </xsl:copy>
   </xsl:template>
+  
+  <!-- Word sometimes stores the auto number as literal title text ("2.2 Sub heading");
+       strip that prefix when it matches the number LaTeX assigns automatically -->
+  <xsl:template match="text()" mode="docx2tex-preprocess">
+    <xsl:param name="strip-literal-heading-number" as="xs:string?" tunnel="yes"/>
+    <xsl:choose>
+      <xsl:when test="exists($strip-literal-heading-number)
+                      and generate-id(.) eq generate-id((ancestor::para[1]//text()[normalize-space(.)])[1])">
+        <xsl:value-of select="replace(., concat('^', $strip-literal-heading-number), '')"/>
+      </xsl:when>
+      <xsl:otherwise>
+        <xsl:value-of select="."/>
+      </xsl:otherwise>
+    </xsl:choose>
+  </xsl:template>
+  
+  <!-- Word's own TOC field heading prints right before the \tableofcontents command
+       (div role="hub:toc"), which issues its own standard "Contents" heading -->
+  <xsl:template match="para[key('hub:style-by-role', @role)/@native-name[matches(., '^(toc heading|toc .*berschrift)$', 'i')]]
+                             [parent::toc or following-sibling::*[1][self::div][@role eq 'hub:toc']]" 
+                mode="docx2tex-preprocess"/>
   
   <!-- commented: prior decision to remove one-entry-lists is now canceled:
        https://mantis.le-tex.de/mantis/view.php?id=14447
@@ -266,9 +340,10 @@
     <xsl:apply-templates mode="#current"/>
   </xsl:template>
   
-  <!-- remove empty paragraphs #13946 -->
-  
-  <xsl:template match="para[not(.//text()) or (every $i in .//text() satisfies matches($i, '^\s+$'))][not(* except tab)]" mode="docx2tex-preprocess"/>
+  <!-- remove empty paragraphs #13946; keep those that carry a page break
+       (Word section breaks are marked on the empty sectPr paragraph) -->
+
+  <xsl:template match="para[not(.//text()) or (every $i in .//text() satisfies matches($i, '^\s+$'))][not(* except tab)][not(@css:page-break-after)]" mode="docx2tex-preprocess"/>
   
   <!-- resolve carriage returns in empty paragraphs. the paragraph will cause a break as well #14306 -->
   
