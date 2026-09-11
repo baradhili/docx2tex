@@ -1900,7 +1900,7 @@
   </template>
 
   <!-- paragraph spacing: explicit margin-top -->
-  <template context="dbk:para[@css:margin-top[matches(., '^[1-9]')]][not(ancestor::dbk:listitem)]">
+  <template context="dbk:para[@css:margin-top[matches(., '^[1-9]')]][not(@docx2tex:config eq 'headline')][not(ancestor::dbk:listitem)]">
     <xsl:text>\vspace*{</xsl:text>
     <xsl:value-of select="replace(@css:margin-top, '[a-z]+$', '')"/>
     <xsl:text>pt}</xsl:text>
@@ -1908,7 +1908,7 @@
   </template>
 
   <!-- paragraph spacing: explicit margin-bottom -->
-  <template context="dbk:para[@css:margin-bottom[matches(., '^[1-9]')]][not(ancestor::dbk:listitem)]">
+  <template context="dbk:para[@css:margin-bottom[matches(., '^[1-9]')]][not(@docx2tex:config eq 'headline')][not(ancestor::dbk:listitem)]">
     <xsl:next-match/>
     <xsl:text>\vspace{</xsl:text>
     <xsl:value-of select="replace(@css:margin-bottom, '[a-z]+$', '')"/>
@@ -1917,12 +1917,56 @@
 
   <!-- paragraph spacing: margin-top from paragraph style -->
   <template context="dbk:para[key('style', @role)/@css:margin-top[matches(., '^[1-9]')]][not(@css:margin-top)]
-                             [not(ancestor::dbk:listitem)]">
+                             [not(@docx2tex:config eq 'headline')][not(ancestor::dbk:listitem)]">
     <xsl:text>\vspace*{</xsl:text>
     <xsl:value-of select="replace(key('style', @role)/@css:margin-top, '[a-z]+$', '')"/>
     <xsl:text>pt}</xsl:text>
     <xsl:next-match/>
   </template>
+
+  <!-- Word keeps the space between two paragraphs at max(space-after of the first,
+       space-before of the second); LaTeX sums the explicit \vspace and \parskip.
+       For heading paragraphs (whose Word margins are explicit), fold the spacing
+       accordingly: the paragraph break already contributes \parskip (8.5pt, the
+       pipeline's Word-Normal approximation), so only the excess is emitted, and a
+       heading's space-before is reduced by the space-after it actually follows. -->
+  <template context="dbk:para[@docx2tex:config eq 'headline'][@css:margin-bottom[matches(., '^[1-9]')]]">
+    <xsl:next-match/>
+    <xsl:variable name="after" select="number(replace(@css:margin-bottom, '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="excess" select="max((0, $after - 8.5))" as="xs:double"/>
+    <xsl:if test="$excess gt 0">
+      <xsl:text>\vspace{</xsl:text>
+      <xsl:value-of select="round($excess * 10) div 10"/>
+      <xsl:text>pt}</xsl:text>
+    </xsl:if>
+  </template>
+
+  <template context="dbk:para[@docx2tex:config eq 'headline'][@css:margin-top[matches(., '^[1-9]')]]">
+    <xsl:call-template name="docx2tex-headline-margin-top">
+      <xsl:with-param name="top" select="number(replace(@css:margin-top, '[a-z]+$', ''))"/>
+    </xsl:call-template>
+  </template>
+
+  <template context="dbk:para[@docx2tex:config eq 'headline'][key('style', @role)/@css:margin-top[matches(., '^[1-9]')]][not(@css:margin-top)]">
+    <xsl:call-template name="docx2tex-headline-margin-top">
+      <xsl:with-param name="top" select="number(replace(key('style', @role)/@css:margin-top, '[a-z]+$', ''))"/>
+    </xsl:call-template>
+  </template>
+
+  <xsl:template name="docx2tex-headline-margin-top">
+    <xsl:param name="top" as="xs:double"/>
+    <!-- the preceding paragraph's effective bottom glue: its space-after, but at
+         least \parskip (which the paragraph break always inserts) -->
+    <xsl:variable name="prev-bottom" as="xs:double"
+                  select="(number(replace(preceding-sibling::dbk:para[1]/@css:margin-bottom, '[a-z]+$', ''))[. = .], 0)[1]"/>
+    <xsl:variable name="excess" select="max((0, $top - max(($prev-bottom, 8.5))))" as="xs:double"/>
+    <xsl:if test="$excess gt 0">
+      <xsl:text>\vspace*{</xsl:text>
+      <xsl:value-of select="round($excess * 10) div 10"/>
+      <xsl:text>pt}</xsl:text>
+    </xsl:if>
+    <xsl:next-match/>
+  </xsl:template>
 
   <!-- line height (multiple line spacing, e.g. Word 1.08 lines) -->
   <template context="dbk:para[@css:line-height[matches(., '^\d\.')][not(. eq '1')]]">
