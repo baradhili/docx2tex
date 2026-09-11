@@ -249,11 +249,11 @@
       <xsl:for-each select="$docx-hf-fonts">
         <xsl:text>\ifPDFTeX\else\IfFontExistsTF{</xsl:text>
         <xsl:value-of select="."/>
-        <xsl:text>}{\newcommand{\docxhffont</xsl:text>
+        <xsl:text>}{\newfontfamily\docxhffont</xsl:text>
         <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', position(), 1)"/>
-        <xsl:text>}{\fontspec{</xsl:text>
+        <xsl:text>{</xsl:text>
         <xsl:value-of select="."/>
-        <xsl:text>}}}{\newcommand{\docxhffont</xsl:text>
+        <xsl:text>}}{\newcommand{\docxhffont</xsl:text>
         <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', position(), 1)"/>
         <xsl:text>}{}}\fi&#xa;</xsl:text>
       </xsl:for-each>
@@ -1861,11 +1861,21 @@
        database reload there, which fails), so each font is resolved once in the
        preamble into a \docxhffont<n> macro. -->
   <xsl:variable name="docx-hf-fonts" as="xs:string*"
-                select="distinct-values(//dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')]//dbk:phrase/@css:font-family)"/>
+                select="distinct-values(//dbk:phrase/@css:font-family)"/>
   <template context="dbk:phrase[ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')]][@css:font-family]">
     <xsl:text>\ifPDFTeX\else\docxhffont</xsl:text>
     <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', index-of($docx-hf-fonts, @css:font-family), 1)"/>
     <xsl:text>\fi </xsl:text>
+    <xsl:next-match/>
+  </template>
+
+  <!-- body runs keep their Word font (e.g. a Times New Roman print-size sample
+       inside an Arial document); the macros resolve in the preamble and inherit
+       the surrounding weight/shape because they are \newfontfamily switches -->
+  <template context="dbk:phrase[@css:font-family][not(ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')])]">
+    <xsl:text>\docxhffont</xsl:text>
+    <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', index-of($docx-hf-fonts, @css:font-family), 1)"/>
+    <xsl:text> </xsl:text>
     <xsl:next-match/>
   </template>
 
