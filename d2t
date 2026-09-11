@@ -234,6 +234,20 @@ HEAP=$HEAP "$CALABASH" \
     2>&1 2>>"$LOG" || exitonerror $? docx2tex
 echo "writing texfile => $OUT_DIR/$BASENAME.tex"
 
+# convert SVGs written by the pipeline (drawingml2svg shapes) to PDF for
+# LuaLaTeX inclusion; the tex references <name>-svg-<n>.pdf next to the .svg
+SVG_COUNT=0
+for svg in $(find "$OUT_DIR" -name "$BASENAME-svg-*.svg" 2>/dev/null); do
+    if rsvg-convert -f pdf -o "${svg%.svg}.pdf" "$svg" 2>>"$LOG"; then
+        SVG_COUNT=$((SVG_COUNT+1))
+    else
+        echo "warning: could not convert $svg to PDF" >> "$LOG"
+    fi
+done
+if [ "$SVG_COUNT" -gt 0 ]; then
+    echo "converted $SVG_COUNT svg image(s) to pdf"
+fi
+
 # run pdflatex with "-p"
 if [ "$PDF" = "yes" ]; then
     cd "$OUT_DIR" && "$PDFLATEX" \
