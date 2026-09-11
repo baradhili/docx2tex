@@ -703,11 +703,19 @@
 
   <template context="dbk:imagedata[@fileref]">
     <rule name="includegraphics" type="cmd">
+      <!-- Word display size when declared (both dimensions, to keep the Word box
+           aspect even when it differs from the pixel aspect); textwidth share only
+           as a fallback -->
       <option select="concat('width=', 
-                             if(ancestor::dbk:figure)
-                             then 1 div count(ancestor::dbk:figure[last()]//*[local-name() = ('mediaobject', 'inlinemediaobject')])
-                             else 1,
-                             '\textwidth')"/>
+                             if (@css:width[not(. eq 'auto')])
+                             then @css:width
+                             else concat(if(ancestor::dbk:figure)
+                                         then 1 div count(ancestor::dbk:figure[last()]//*[local-name() = ('mediaobject', 'inlinemediaobject')])
+                                         else 1,
+                                         '\textwidth'),
+                             if (@css:height[not(. eq 'auto')])
+                             then concat(',height=', @css:height)
+                             else '')"/>
       <param select="replace(@fileref, '([%#])', '\\$1')"/>
     </rule>
   </template>

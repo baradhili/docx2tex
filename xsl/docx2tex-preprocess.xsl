@@ -260,6 +260,16 @@
     </xsl:if>
   </xsl:function>
   
+  <!-- a heading paragraph whose only content is an image (e.g. a screenshot dropped
+       into a Heading-styled paragraph) is not a sectioning command: drop the headline
+       marking and role so the image flows inline as a normal paragraph -->
+  <xsl:template match="para[@docx2tex:config eq 'headline'][not(normalize-space(string(.//text()[not(ancestor::dbk:mediaobject)])))]"
+                mode="docx2tex-preprocess" priority="6">
+    <xsl:copy>
+      <xsl:apply-templates select="@* except (@docx2tex:config, @role), node()" mode="#current"/>
+    </xsl:copy>
+  </xsl:template>
+
   <xsl:template match="para[@docx2tex:config eq 'headline']" mode="docx2tex-preprocess">
     <xsl:variable name="pos" select="index-of($headline-paras, generate-id(.))" as="xs:integer"/>
     <xsl:variable name="level" select="docx2tex:heading-level(.)" as="xs:integer"/>
