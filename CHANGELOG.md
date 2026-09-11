@@ -19,7 +19,11 @@ Verification artifacts and per-issue root-cause notes live in
 `.zcode/plans/page1-diff-docx2tex-vs-onlyoffice.md` and
 `.zcode/plans/full-diff.md`.
 
-## Base repo (docx2tex) — 22 commits ahead of master
+## Base repo (docx2tex) — `front-page-layout` vs pre-merge master
+
+(The `front-page-layout` branch was squash-merged into master as `0e00985`
+"Handle more complex/messy word layout and styling(#1)"; the sections above
+document that pass. The `further-fixes` pass below is 10 commits on top.)
 
 ### Word page layout → LaTeX geometry
 
@@ -200,10 +204,76 @@ See [docx2hub/CHANGELOG.md](docx2hub/CHANGELOG.md) for the per-commit details.
 
 ## xml2tex fork — 1 commit ahead of master
 
-CALS table row shading (`owcolor`) and border rule colours (`rrayrulecolor`) in
+CALS table row shading (`
+owcolor`) and border rule colours (`rrayrulecolor`) in
 `calstable2tabular`, so Word table styling (navy header rows, grey grids) renders as in
 the reference. See [xml2tex/CHANGELOG.md](xml2tex/CHANGELOG.md).
 
 ## mml2tex fork
 
 No changes on `front-page-layout` (pinned at master).
+
+## `further-fixes` pass — second and third documents (example03, resume)
+
+Driven by two more reference documents (`.zcode/example3` "Word Documents
+Template", `.zcode/example4` one-page resume), each verified against its OnlyOffice
+render. After every fix, all previously matching documents were rebuilt and their
+known-good state re-checked (the guard caught one bad interaction before commit).
+
+### example03 — whole-document fidelity
+
+- **Unnumbered Word headings stay unnumbered** (`735ce58`): documents whose heading
+  styles carry no list numbering got LaTeX numbers Word does not show. When no
+  headline paragraph carries a Word number (detected via the `\label{mark-…}` PIs
+  the preprocessor leaves behind — the identifier phrases themselves are stripped
+  earlier), the preamble sets `secnumdepth` to -2 and titlesec drops the labels.
+- **Image-only heading paragraphs render as in-flow images; body images take their
+  Word size** (`b899107`): a screenshot dropped into a Heading-2 paragraph became a
+  sectioning command with the `\includegraphics` as its title, and body images were
+  stretched to `\textwidth` regardless of their Word display size — together a
+  blank page (6 pages vs the reference's 5). Image-only headings lose their headline
+  marking (alt text does not count as text) and images use the declared
+  `css:width`/`css:height`.
+- **Body font families switch** (`eb27692`): font macros collect families from all
+  phrases (not just header/footer parts) and use `\newfontfamily` so bold/italic
+  shapes are inherited — the Times New Roman print-size sample renders in Times
+  inside the Arial document.
+- **Word's default bullet is the middle dot** (`96ca068`): Symbol-font F0B7 renders
+  as "·" (`\item[\textperiodcentered]`), matching the reference's Standard
+  Symbols PS glyph.
+- **Document-default line spacing** (`0d56230`): a "1.5 lines" Normal style
+  (surfaced by docx2hub as `css:default-line-height`) applies a global
+  `\linespread{1.5}`; single-spaced documents are unaffected.
+- **Paragraph spacing from the Normal style's space-after** (`9c1f44f`): the
+  hardcoded `\parskip` 8.5pt (an HSS_REP calibration) inflated every paragraph of
+  documents whose Normal style declares no space-after (Word default 0); parskip is
+  now driven by the surfaced value. Example3 renders 5 pages as the reference.
+
+### example4 — floating layout, fonts, vector art
+
+- **Font macros without header/footer parts** (`a082dc1`): the `\docxhffont`
+  definitions moved out of the header/footer block (documents without any — the
+  resume — referenced undefined macros; 44 errors).
+- **Pipeline SVGs convert to PDF** (`caec009`): drawingml2svg shapes are written
+  with document-order indices (svg shapes value-compare equal, so `index-of` gave
+  them all one name), the tex references same-basename PDFs converted by
+  `rsvg-convert` in the d2t wrapper after the pipeline, and zero-width degenerate
+  conversions are skipped. The six vector icons render.
+- **Absolutely positioned body text boxes** (`c97268b`): VML fallback shapes with
+  `position:absolute` render as textpos textblocks at their Word coordinates
+  (margin offsets + page margins, width from the shape style, 1pt modules). The
+  resume's two-column layout renders; header/footer shapes and margin-less shapes
+  are excluded (the classification marking would otherwise produce NaN
+  coordinates — caught by the example2 guard).
+
+### Submodule wiring
+
+- **Three more baradhili forks** (`ca0ddc9`): `calabash`, `cascade` and `evolve-hub`
+  now fetch from github.com/baradhili and advanced to the fork masters
+  (fast-forwards: evolve-hub +5, cascade +3, calabash +1). The remaining submodules
+  (xslt-util, xproc-util, htmlreports, mml-normalize, fontmaps) are unmodified
+  upstream pins — fork when first changed.
+
+Known open items for the resume (`.zcode/plans/futher-fixes.md`): the portrait
+photo (a shape `blipFill` swallowed by drawingml2svg) and in-box spacing
+fine-tuning.
