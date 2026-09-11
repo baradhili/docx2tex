@@ -785,11 +785,18 @@
   
   <template context="dbk:listitem[not(parent::dbk:varlistentry)][empty(@override)]">
     <rule name="item" type="cmd" break-before="1">        
-      <xsl:if test="    parent::dbk:itemizedlist/@mark 
-                    and parent::dbk:itemizedlist/@mark != 'bullet'
-                    and not($xerif)">
-        <option select="xml2tex:utf2tex((), parent::dbk:itemizedlist/@mark, $charmap, (), $texregex)"/>
-      </xsl:if>
+      <xsl:choose>
+        <xsl:when test="   parent::dbk:itemizedlist/@mark 
+                       and parent::dbk:itemizedlist/@mark != 'bullet'
+                       and not($xerif)">
+          <option select="xml2tex:utf2tex((), parent::dbk:itemizedlist/@mark, $charmap, (), $texregex)"/>
+        </xsl:when>
+        <xsl:when test="parent::dbk:itemizedlist/@mark eq 'bullet' and not($xerif)">
+          <!-- Word's default bullet is the Symbol-font middle dot (F0B7), which
+               Word/OnlyOffice render as a small dot, not LaTeX's full bullet -->
+          <option select="'\textperiodcentered'"/>
+        </xsl:when>
+      </xsl:choose>
       <xsl:if test="not($a11y)"><text select="' '"/></xsl:if>
       <text/>
     </rule>
