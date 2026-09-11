@@ -272,7 +272,9 @@
       <xsl:value-of select="."/>
       <xsl:text>}}{\newcommand{\docxhffont</xsl:text>
       <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', position(), 1)"/>
-      <xsl:text>}{}}\fi&#xa;</xsl:text>
+      <xsl:text>}{}\typeout{docx2tex WARNING: font '</xsl:text>
+      <xsl:value-of select="."/>
+      <xsl:text>' not found - install it and rerun; using the fallback document font}}\fi&#xa;</xsl:text>
     </xsl:for-each>
 
     <xsl:if test="exists($docx-headers)">
