@@ -10,7 +10,8 @@
 	branch = front-page-layout
 [submodule "evolve-hub"]
 	path = evolve-hub
-	url = https://github.com/transpect/evolve-hub
+	url = https://github.com/baradhili/evolve-hub.git
+	branch = master
 [submodule "xml2tex"]
 	path = xml2tex
 	url = https://github.com/baradhili/xml2tex
@@ -24,7 +25,8 @@
 	url = https://github.com/transpect/htmlreports
 [submodule "calabash"]
 	path = calabash
-	url = https://github.com/transpect/calabash-frontend
+	url = https://github.com/baradhili/calabash-frontend.git
+	branch = master
 [submodule "schema/hub"]
 	path = schema/hub
 	url = https://github.com/gimsieke/Hub
@@ -33,7 +35,8 @@
 	url = https://github.com/transpect/mml-normalize
 [submodule "cascade"]
 	path = cascade
-	url = https://github.com/transpect/cascade
+	url = https://github.com/baradhili/cascade.git
+	branch = master
 [submodule "fontmaps"]
 	path = fontmaps
 	url = http://github.com/transpect/fontmaps
