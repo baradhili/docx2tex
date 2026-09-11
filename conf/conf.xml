@@ -319,36 +319,27 @@
              rendered separately, at absolute positions) -->
         <xsl:for-each select="$hdr/dbk:para[normalize-space(string(.))]
                                     [exists(node()[not(self::dbk:tabs)][not(self::dbk:phrase[@role eq 'hub:foreign'])][not(self::dbk:phrase[dbk:phrase[@role eq 'hub:foreign']][not(text()[normalize-space()])])][normalize-space(string(.))])]">
-          <xsl:text>  \fancyhead[</xsl:text>
-          <xsl:value-of select="if (@css:text-align eq 'right') then 'R'
-                                else if (@css:text-align eq 'center') then 'C'
-                                else 'L'"/>
-          <xsl:text>]{</xsl:text>
-          <xsl:apply-templates select="node()[not(self::dbk:tabs)][not(self::dbk:phrase[@role eq 'hub:foreign'])][not(self::dbk:phrase[dbk:phrase[@role eq 'hub:foreign']][not(text()[normalize-space()])])]" mode="#current"/>
-          <xsl:text>}%&#xa;</xsl:text>
+          <xsl:call-template name="docx2tex-hf-entry">
+            <xsl:with-param name="kind" select="'head'"/>
+          </xsl:call-template>
         </xsl:for-each>
         <!-- footer: Word layouts the footer as a borderless table; first text cell
              left, last text cell right -->
         <xsl:for-each select="$footer-entries">
-          <xsl:if test="position() eq 1">
-            <xsl:text>  \fancyfoot[L]{</xsl:text>
-            <xsl:apply-templates select="dbk:para[1]/node()[not(self::dbk:tabs)][not(self::dbk:phrase[@role eq 'hub:foreign'])][not(self::dbk:phrase[dbk:phrase[@role eq 'hub:foreign']][not(text()[normalize-space()])])]" mode="#current"/>
-            <xsl:text>}%&#xa;</xsl:text>
-          </xsl:if>
-          <xsl:if test="position() eq last() and position() gt 1">
-            <xsl:text>  \fancyfoot[R]{</xsl:text>
-            <xsl:apply-templates select="dbk:para[1]/node()[not(self::dbk:tabs)][not(self::dbk:phrase[@role eq 'hub:foreign'])][not(self::dbk:phrase[dbk:phrase[@role eq 'hub:foreign']][not(text()[normalize-space()])])]" mode="#current"/>
-            <xsl:text>}%&#xa;</xsl:text>
+          <xsl:if test="position() eq 1 or (position() eq last() and position() gt 1)">
+            <xsl:variable name="entry-side" select="if (position() eq 1) then 'L' else 'R'" as="xs:string"/>
+            <xsl:for-each select="dbk:para[1]">
+              <xsl:call-template name="docx2tex-hf-entry">
+                <xsl:with-param name="kind" select="'foot'"/>
+                <xsl:with-param name="side" select="$entry-side"/>
+              </xsl:call-template>
+            </xsl:for-each>
           </xsl:if>
         </xsl:for-each>
         <xsl:for-each select="$footer-paras">
-          <xsl:text>  \fancyfoot[</xsl:text>
-          <xsl:value-of select="if (@css:text-align eq 'right') then 'R'
-                                else if (@css:text-align eq 'center') then 'C'
-                                else 'L'"/>
-          <xsl:text>]{</xsl:text>
-          <xsl:apply-templates select="node()[not(self::dbk:tabs)][not(self::dbk:phrase[@role eq 'hub:foreign'])][not(self::dbk:phrase[dbk:phrase[@role eq 'hub:foreign']][not(text()[normalize-space()])])]" mode="#current"/>
-          <xsl:text>}%&#xa;</xsl:text>
+          <xsl:call-template name="docx2tex-hf-entry">
+            <xsl:with-param name="kind" select="'foot'"/>
+          </xsl:call-template>
         </xsl:for-each>
         <!-- rules: Word draws the header para's bottom border and the footer cells'
              top border in the section's rule color -->
@@ -399,6 +390,44 @@
   <ns prefix="docx2hub" uri="http://transpect.io/docx2hub"/>
   <ns prefix="mml2tex" uri="http://transpect.io/mml2tex"/>
   <ns prefix="tr" uri="http://transpect.io"/>
+
+  <!-- one Word header/footer paragraph as a fancyhdr entry: side from the para's
+       text-align (or the footer-table cell position), in the paragraph style's
+       font size and weight (Word footer styles are often 9 pt bold) -->
+  <xsl:template name="docx2tex-hf-entry">
+    <xsl:param name="kind" as="xs:string" select="'head'"/>
+    <xsl:param name="side" as="xs:string"
+               select="if (@css:text-align eq 'right') then 'R'
+                       else if (@css:text-align eq 'center') then 'C'
+                       else 'L'"/>
+    <xsl:variable name="hf-size" as="xs:double?"
+                  select="max(for $sz in (if (exists(.//dbk:phrase/@css:font-size))
+                                           then .//dbk:phrase/@css:font-size
+                                           else (@css:font-size, key('style', @role)/@css:font-size))
+                                       return number(replace($sz, '[a-z]+$', '')))"/>
+    <xsl:variable name="hf-bold" as="xs:boolean"
+                  select="string((@css:font-weight, key('style', @role)/@css:font-weight)[1]) eq 'bold'"/>
+    <xsl:text>  \fancy</xsl:text>
+    <xsl:value-of select="$kind"/>
+    <xsl:text>[</xsl:text>
+    <xsl:value-of select="$side"/>
+    <xsl:text>]{</xsl:text>
+    <xsl:if test="exists($hf-size) and $hf-size ne 12">
+      <xsl:text>{\fontsize{</xsl:text>
+      <xsl:value-of select="$hf-size"/>
+      <xsl:text>pt}{</xsl:text>
+      <xsl:value-of select="round($hf-size * 1.15 * 10) div 10"/>
+      <xsl:text>pt}\selectfont </xsl:text>
+    </xsl:if>
+    <xsl:if test="$hf-bold">
+      <xsl:text>\bfseries </xsl:text>
+    </xsl:if>
+    <xsl:apply-templates select="node()[not(self::dbk:tabs)][not(self::dbk:phrase[@role eq 'hub:foreign'])][not(self::dbk:phrase[dbk:phrase[@role eq 'hub:foreign']][not(text()[normalize-space()])])]" mode="#current"/>
+    <xsl:if test="exists($hf-size) and $hf-size ne 12">
+      <xsl:text>}</xsl:text>
+    </xsl:if>
+    <xsl:text>}%&#xa;</xsl:text>
+  </xsl:template>
 
   <!-- drop metadata -->
 
@@ -1824,7 +1853,8 @@
   <!-- Word PAGE / NUMPAGES field results (tagged by docx2hub) regenerate as live
        numbers, so they match the LaTeX pagination instead of Word's cached values -->
   <template context="dbk:phrase[@role eq 'hub:page-number']">
-    <text>\thepage </text>
+    <!-- {} ends the control word so the following space survives ("Page i of 6") -->
+    <text>\thepage{}</text>
   </template>
 
   <template context="dbk:phrase[@role eq 'hub:page-count']">
@@ -1916,16 +1946,22 @@
     <xsl:variable name="section" select="$break-index + 1" as="xs:integer"/>
     <xsl:variable name="docx-headers" select="//dbk:div[@role eq 'docx2hub:header'][@condition eq 'default']" as="element(dbk:div)*"/>
     <xsl:variable name="docx-footers" select="//dbk:div[@role eq 'docx2hub:footer'][@condition eq 'default']" as="element(dbk:div)*"/>
-    <xsl:text>\clearpage&#xa;</xsl:text>
     <xsl:if test="$break-index eq 1">
-      <!-- the cover artwork (logo, vision band) ends with the cover section; the
-           classification marking applies to every page and is re-added -->
-      <xsl:text>\ClearShipoutPicture&#xa;\AddToShipoutPicture{\docxmarking}&#xa;</xsl:text>
+      <!-- end the cover's footer-band reservation BEFORE the page break: the page-1
+           shipout refreshes the page-builder column height from \textheight, so a
+           later restore would leave page 2 with the reduced height (footer riding
+           high). Page 1 itself was already built against the reduced height. -->
       <xsl:if test="$cover-footer-reserve">
         <xsl:text>\addtolength{\textheight}{</xsl:text>
         <xsl:value-of select="replace($cover-footer-reserve, '-', '')"/>
         <xsl:text>}&#xa;</xsl:text>
       </xsl:if>
+    </xsl:if>
+    <xsl:text>\clearpage&#xa;</xsl:text>
+    <xsl:if test="$break-index eq 1">
+      <!-- the cover artwork (logo, vision band) ends with the cover section; the
+           classification marking applies to every page and is re-added -->
+      <xsl:text>\ClearShipoutPicture&#xa;\AddToShipoutPicture{\docxmarking}&#xa;</xsl:text>
     </xsl:if>
     <xsl:if test="@css:page-number-format or @css:page-number-start">
       <xsl:text>\pagenumbering{</xsl:text>
