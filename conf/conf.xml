@@ -186,7 +186,9 @@
     <!-- absolutely positioned VML text boxes (Word floating shapes) render via
          textpos at their Word coordinates; modules of 1pt make the textblock
          arguments plain points from the paper's top-left corner -->
-    <xsl:if test="exists(//w:pict[v:shape/v:textbox][contains(v:shape/@style, 'position:absolute')][contains(v:shape/@style, 'margin-left')][contains(v:shape/@style, 'margin-top')])">
+    <xsl:if test="exists(//w:pict[v:shape/v:textbox][contains(v:shape/@style, 'position:absolute')][contains(v:shape/@style, 'margin-left')][contains(v:shape/@style, 'margin-top')])
+                  or exists(//dbk:imagedata[@css:position-left][@css:position-top]
+                                       [not(ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')])])">
       <xsl:text>\usepackage[absolute]{textpos}&#xa;</xsl:text>
       <xsl:text>\setlength{\TPHorizModule}{1pt}\setlength{\TPVertModule}{1pt}\textblockorigin{0pt}{0pt}&#xa;</xsl:text>
     </xsl:if>
@@ -776,6 +778,31 @@
                              else '')"/>
       <param select="replace(@fileref, '([%#])', '\\$1')"/>
     </rule>
+  </template>
+
+
+  <template context="dbk:imagedata[@fileref][@css:position-left][@css:position-top]
+                             [not(ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')])]">
+    <!-- Word floating pictures (wp:anchor): place at the anchor coordinates -->
+    <xsl:variable name="page-left" select="number(replace((/dbk:hub/@css:margin-left, '72pt')[1], '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="page-top" select="number(replace((/dbk:hub/@css:margin-top, '72pt')[1], '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="x" select="$page-left + number(replace(@css:position-left, '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="y" select="$page-top + number(replace(@css:position-top, '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="w" select="number(replace((@css:width[not(. eq 'auto')], '0pt')[1], '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="h" select="number(replace((@css:height[not(. eq 'auto')], '0pt')[1], '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:text>\begin{textblock}{</xsl:text>
+    <xsl:value-of select="round($w * 10) div 10"/>
+    <xsl:text>}(</xsl:text>
+    <xsl:value-of select="round($x * 10) div 10"/>
+    <xsl:text>,</xsl:text>
+    <xsl:value-of select="round($y * 10) div 10"/>
+    <xsl:text>)\includegraphics[width=</xsl:text>
+    <xsl:value-of select="round($w * 10) div 10"/>
+    <xsl:text>pt,height=</xsl:text>
+    <xsl:value-of select="round($h * 10) div 10"/>
+    <xsl:text>pt]{</xsl:text>
+    <xsl:value-of select="replace(@fileref, '([%#])', '\\$1')"/>
+    <xsl:text>}\end{textblock}</xsl:text>
   </template>
   
   <xsl:variable name="svg-images" as="element(svg:svg)*"
