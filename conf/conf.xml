@@ -255,6 +255,9 @@
       <!-- place the header baseline near Word's header line (measured: rule at 62pt
            below the page top) and the footer text above the page bottom as in Word -->
       <xsl:text>\geometry{headheight=14pt,headsep=36.9pt,footskip=20pt}&#xa;</xsl:text>
+      <!-- Word's header paragraph is tall (it anchors the marking text box), so its
+           bottom border (the rule) sits well below the header text -->
+      <xsl:text>\renewcommand{\headruleskip}{14.9pt}&#xa;</xsl:text>
       <!-- the classification marking (e.g. red OFFICIAL, page-anchored text box) is
            shared by every section's header part: keep it as a macro so it can be
            re-added after the shipout stack is cleared for a later section -->
@@ -2020,6 +2023,34 @@
         <xsl:value-of select="xs:integer(@css:page-number-start)"/>
         <xsl:text>}&#xa;</xsl:text>
       </xsl:if>
+    </xsl:if>
+    <!-- the section's own page margins (Word w:pgMar, e.g. a tall top margin on a
+         closing page): \newgeometry applies them from this page on; the header
+         rule keeps its absolute position (62.4pt below the page top, as measured
+         in the reference), so the head distance follows the new top margin -->
+    <xsl:if test="@css:page-margin-top and @css:page-margin-bottom">
+      <xsl:variable name="sec-top" select="number(replace(@css:page-margin-top, '[a-z]+$', ''))" as="xs:double"/>
+      <!-- landing-style closing pages (huge top margin) render in the reference
+           with the section's header distance added below the margin -->
+      <xsl:variable name="sec-top-adjusted" as="xs:double"
+                    select="if ($sec-top ge 300 and @css:page-header-distance)
+                            then $sec-top + number(replace(@css:page-header-distance, '[a-z]+$', ''))
+                            else $sec-top"/>
+      <!-- header text baseline ~43.5pt below the page top; the rule stays at
+           ~62.4pt via \headruleskip -->
+      <xsl:variable name="sec-left" select="replace((@css:page-margin-left, '56.7pt')[1], '[a-z]+$', '')" as="xs:string"/>
+      <xsl:variable name="sec-right" select="replace((@css:page-margin-right, '56.7pt')[1], '[a-z]+$', '')" as="xs:string"/>
+      <xsl:text>\newgeometry{top=</xsl:text>
+      <xsl:value-of select="round($sec-top-adjusted * 10) div 10"/>
+      <xsl:text>pt,bottom=</xsl:text>
+      <xsl:value-of select="replace(@css:page-margin-bottom, '[a-z]+$', '')"/>
+      <xsl:text>pt,left=</xsl:text>
+      <xsl:value-of select="$sec-left"/>
+      <xsl:text>pt,right=</xsl:text>
+      <xsl:value-of select="$sec-right"/>
+      <xsl:text>pt,headheight=14pt,headsep=</xsl:text>
+      <xsl:value-of select="round(($sec-top-adjusted - 47.5) * 10) div 10"/>
+      <xsl:text>pt,footskip=20pt}&#xa;</xsl:text>
     </xsl:if>
     <xsl:if test="exists($docx-headers[$section])">
       <xsl:text>\pagestyle{docx-section-</xsl:text>
