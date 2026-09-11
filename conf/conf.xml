@@ -178,6 +178,13 @@
     \usepackage{arydshln}
     <!-- approximate the typical Word 'Normal' style spacing after of 0.5 line (170tw = 8.5pt) -->
     <xsl:text>\setlength{\parskip}{8.5pt}&#xa;\setlength{\parindent}{0pt}&#xa;</xsl:text>
+    <!-- a "1.5 lines" (or other) Normal style spaces the whole document (Word
+         default line spacing, surfaced on the hub root by docx2hub) -->
+    <xsl:if test="/dbk:hub/@css:default-line-height[. castable as xs:double][xs:double(.) gt 1]">
+      <xsl:text>\linespread{</xsl:text>
+      <xsl:value-of select="/dbk:hub/@css:default-line-height"/>
+      <xsl:text>}&#xa;</xsl:text>
+    </xsl:if>
     <!-- match the LaTeX sectioning commands to the docx Heading{n} styles: one
          titlesec \titleformat per level, generated from the styles' css:rule
          (font size, weight, colour). Chapters become 'straight' (inline number,
