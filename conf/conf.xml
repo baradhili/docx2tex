@@ -224,6 +224,14 @@
         <xsl:text>}{0pt}{0pt}{0pt}&#xa;</xsl:text>
       </xsl:for-each>
     </xsl:if>
+    <!-- documents whose Word headings carry no list numbering must not get LaTeX
+         numbers either: when no headline paragraph has a Word number identifier,
+         disable section numbering (titlesec then drops the labels) -->
+    <xsl:if test="exists(//dbk:para[@docx2tex:config eq 'headline'])
+                  and empty(//dbk:para[@docx2tex:config eq 'headline']
+                                  [processing-instruction('latex')[starts-with(., '\label{mark-')]])">
+      <xsl:text>\setcounter{secnumdepth}{-2}&#xa;</xsl:text>
+    </xsl:if>
     <!-- Word headers/footers (included by docx2hub with include-header-and-footer=yes):
          every section's default header/footer part becomes a fancyhdr page style,
          switched at the Word section breaks (see the section-break template below).
