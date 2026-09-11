@@ -183,6 +183,14 @@
     <xsl:text>\setlength{\parskip}{</xsl:text>
     <xsl:value-of select="$default-parskip"/>
     <xsl:text>pt}&#xa;\setlength{\parindent}{0pt}&#xa;</xsl:text>
+    <!-- absolutely positioned VML text boxes (Word floating shapes) render via
+         textpos at their Word coordinates; modules of 1pt make the textblock
+         arguments plain points from the paper's top-left corner -->
+    <xsl:if test="exists(//w:pict[v:shape/v:textbox][contains(v:shape/@style, 'position:absolute')][contains(v:shape/@style, 'margin-left')][contains(v:shape/@style, 'margin-top')])">
+      <xsl:text>\usepackage[absolute]{textpos}&#xa;</xsl:text>
+      <xsl:text>\setlength{\TPHorizModule}{1pt}\setlength{\TPVertModule}{1pt}\textblockorigin{0pt}{0pt}&#xa;</xsl:text>
+    </xsl:if>
+
     <!-- a "1.5 lines" (or other) Normal style spaces the whole document (Word
          default line spacing, surfaced on the hub root by docx2hub) -->
     <xsl:if test="/dbk:hub/@css:default-line-height[. castable as xs:double][xs:double(.) gt 1]">
@@ -414,6 +422,8 @@
   <ns prefix="svg" uri="http://www.w3.org/2000/svg"/>
   <ns prefix="docx2tex" uri="http://transpect.io/docx2tex"/>
   <ns prefix="docx2hub" uri="http://transpect.io/docx2hub"/>
+  <ns prefix="w" uri="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>
+  <ns prefix="v" uri="urn:schemas-microsoft-com:vml"/>
   <ns prefix="mml2tex" uri="http://transpect.io/mml2tex"/>
   <ns prefix="tr" uri="http://transpect.io"/>
 
@@ -715,6 +725,37 @@
   </template>
   
   <template context="dbk:alt"/>
+
+  <!-- Word floating text boxes (VML fallback shapes with position:absolute):
+       render the box's paragraphs at the Word coordinates. Offsets are relative
+       to the text column start ('mso-position-*-relative:text'), so the page
+       margins are added; the vertical anchor paragraph is at the top margin. -->
+  <template context="w:pict[v:shape/v:textbox][contains(v:shape/@style, 'position:absolute')][contains(v:shape/@style, 'margin-left')][contains(v:shape/@style, 'margin-top')][not(ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')])]">
+    <xsl:variable name="style" select="v:shape/@style" as="xs:string"/>
+    <xsl:variable name="vml-left" as="xs:string"
+                  select="(tokenize($style, ';')[normalize-space(substring-before(., ':')) eq 'margin-left'], '0pt')[1]"/>
+    <xsl:variable name="vml-top" as="xs:string"
+                  select="(tokenize($style, ';')[normalize-space(substring-before(., ':')) eq 'margin-top'], '0pt')[1]"/>
+    <xsl:variable name="vml-width" as="xs:string"
+                  select="(tokenize($style, ';')[normalize-space(substring-before(., ':')) eq 'width'], '0pt')[1]"/>
+    <xsl:variable name="left" select="number(replace(normalize-space(substring-after($vml-left, ':')), '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="top" select="number(replace(normalize-space(substring-after($vml-top, ':')), '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="width" select="number(replace(normalize-space(substring-after($vml-width, ':')), '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="page-left" select="number(replace((/dbk:hub/@css:margin-left, '72pt')[1], '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="page-top" select="number(replace((/dbk:hub/@css:margin-top, '72pt')[1], '[a-z]+$', ''))" as="xs:double"/>
+    <!-- textpos module arguments are plain numbers (1pt modules), no units -->
+    <xsl:text>\begin{textblock}{</xsl:text>
+    <xsl:value-of select="round($width * 10) div 10"/>
+    <xsl:text>}(</xsl:text>
+    <xsl:value-of select="round(($page-left + $left) * 10) div 10"/>
+    <xsl:text>,</xsl:text>
+    <xsl:value-of select="round(($page-top + $top) * 10) div 10"/>
+    <xsl:text>)\parbox[t]{</xsl:text>
+    <xsl:value-of select="round($width * 10) div 10"/>
+    <xsl:text>pt}{</xsl:text>
+    <xsl:apply-templates select="v:shape/v:textbox/element()" mode="#current"/>
+    <xsl:text>}\end{textblock}</xsl:text>
+  </template>
 
   <template context="dbk:imagedata[@fileref]">
     <rule name="includegraphics" type="cmd">
