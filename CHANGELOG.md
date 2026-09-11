@@ -8,10 +8,18 @@ substantial differences to matching the reference: same page count (6), same con
 page, same fonts (Arial + Calibri), same colours, same marking position, correct logo
 proportions and true A4 page geometry.
 
-Verification artifacts and per-issue root-cause notes live in
-`.zcode/plans/page1-diff-docx2tex-vs-onlyoffice.md`.
+A second pass (after tag `Changelog-1`) extended the match from the cover to the whole
+document: Word Heading styles become styled, mid-page-flowing LaTeX sectioning commands
+with a filled table of contents; every Word section renders its own header/footer with
+roman/arabic page-number restarts; heading and footer spacing follows Word's max-collapse
+rule; and per-section page geometry (including a closing page with a tall custom top
+margin) is applied at the section breaks. All six pages now match the reference layout.
 
-## Base repo (docx2tex) — 12 commits ahead of master
+Verification artifacts and per-issue root-cause notes live in
+`.zcode/plans/page1-diff-docx2tex-vs-onlyoffice.md` and
+`.zcode/plans/full-diff.md`.
+
+## Base repo (docx2tex) — 21 commits ahead of master
 
 ### Word page layout → LaTeX geometry
 
@@ -82,6 +90,82 @@ Verification artifacts and per-issue root-cause notes live in
   `\sbox\@tempboxa{\includegraphics{…}}`. The page-1 logo was squeezed to 72 % of its
   correct width before; its aspect now matches the reference (3.93 vs 3.97).
 
+### Regression fixes (cover and all pages)
+
+- **Dedicated savebox for cropped images** (`2ae0613`): the crop-measuring code stored the
+  image in `\@tempboxa`, and the shipout picture emitted `\@tempboxa` as literal text on
+  every page ("tempboxa" visible on all pages). Crops now use a dedicated
+  `\newsavebox{\docxcroppedimagebox}`, allocated in the preamble when any cropped image
+  exists.
+- **Zero `\fboxsep` around highlight colorboxes** (`292ea9b`): `\colorbox`'s default 3pt
+  padding inserted gaps inside highlighted runs ("Month 20 YY", "DD.MM.20YY ABC"). Word
+  highlight has no padding, so highlight boxes are now emitted inside a local
+  `{\fboxsep0pt …}` group.
+- **`amsmath` before `txfonts`** (`f22e7bc`): the txfonts load order broke latexmk — its
+  `\iint` &co. clashed with amsmath's. txfonts now loads after amsmath (and still before
+  fontspec/tgheros, preserving the "docx fonts win" rule from `f2cf01a`).
+
+### Word Heading styles → LaTeX sectioning, and a filled TOC
+
+- **Heading paragraphs map to sectioning commands** (`41cc90e`): numbered Word headings
+  fell through to single-item `enumerate` lists, so `\tableofcontents` stayed empty.
+  With the docx2hub styleId fix (see below) the heading roles match the conf templates,
+  activating the pipeline's existing numbered-heading machinery (headline marking, list
+  exemption, Word numbers replaced by LaTeX auto-numbering, anchors kept as
+  `\label{mark-…}`). docx2tex-preprocess additionally retitles a heading by its effective
+  outline level when Word numbers it at another level (Heading-1-styled "2.1 Sub heading"
+  becomes `\section`) and strips literal numbers from title text that equal LaTeX's
+  auto number ("2.2 Sub heading" stored its number as text). Word Heading 1 → `\chapter`,
+  Heading 2 → `\section`.
+- **Heading styles via titlesec; chapters flow like Word** (`27086c5`): one
+  `\titleformat`/`\titlespacing` per level is generated from the docx Heading styles'
+  css rules (font size, weight, colour — e.g. H1 14pt bold navy with a trailing dot after
+  the number). `\titleclass{\chapter}{straight}` removes the chapter page break, so
+  Heading 1 renders inline and flows mid-page as in the reference; the TOC gets an
+  explicit `\clearpage`, restoring the reference's 6-page layout, and the "Contents"
+  heading picks up the H1 style.
+
+### Per-section headers, footers and page numbers
+
+- **fancyhdr page styles per Word section** (`5334338`): each section's default
+  header/footer part becomes a `\fancypagestyle{docx-section-N}` (header text by
+  alignment, footer table cells as L/R entries, rules from the Word border widths),
+  switched at the section breaks together with `\pagenumbering` (roman/arabic restarts
+  from the sections' `pgNumType`). The classification marking stays on all pages via a
+  `\docxmarking` macro; the cover artwork is cleared from the eso-pic shipout stack
+  after page 1; the final section's full-bleed footer band is added at its break.
+  Word's PAGE/NUMPAGES field results regenerate as live numbers (`\thepage`, and a
+  physical page count via zref-abspage) so "Page i of 6" matches the real LaTeX
+  pagination. `\KOMAoption{open}{any}` stops scrbook inserting blank verso pages between
+  chapters. Header fonts resolve once in the preamble into `\docxhffont` macros — a
+  missing font (Arial Narrow) must not trigger a luaotfload reload from inside the
+  output routine.
+- **Footer refinements** (`316336a`): footer text takes its paragraph style's 9pt bold
+  (the "Page n of m" paragraph keeps its explicit normal weight, as in the docx) —
+  previously the un-highlighted runs rendered at 12pt regular next to 9pt highlighted
+  ones; `\thepage{}` keeps the space in "Page i of 6" (the control word gobbled it);
+  the cover's `\textheight` reservation is restored *before* the break's `\clearpage`
+  (the page-1 shipout re-syncs the page-builder column height — restoring after it left
+  page 2's footer rule 67.8pt too high).
+- **Heading spacing collapses like Word** (`a285001`): Word keeps inter-paragraph
+  spacing at max(space-after, space-before); the output summed the explicit `\vspace`
+  values on top of `\parskip` (8.5 + 12 + 12 = 32.5pt where Word uses 12pt). Headline
+  paragraphs now emit only the excess over `\parskip`, and a heading's space-before is
+  reduced by the effective space-after it follows. Measured H1→H2 baseline gap 28.8pt
+  vs 29.2pt in the reference.
+
+### Per-section page geometry
+
+- **Word `w:pgMar` at section breaks** (`eaf81d1`): sections 2–3 use a 70.9pt top margin
+  (the pipeline had section 1's 99.25pt everywhere) and the closing section a tall
+  custom 537.5pt top margin; `\newgeometry` at each section break applies the section's
+  own margins (landing-style pages with a ≥300pt top margin additionally shift by the
+  section's header distance, matching the reference: last-page body starts 582.6pt from
+  the top vs 582.5pt). The header text is re-anchored to the reference position — Word's
+  header paragraph is tall (it anchors the marking text box), so its bottom-border rule
+  sits ~19pt below the text; modeled with fancyhdr's `\headruleskip` (rule 62.4pt,
+  text baseline ~43.5pt).
+
 ### Submodule wiring
 
 - **baradhili forks** (`bb1dbca`, `237ac3d`, `7f65bb5`): `docx2hub`, `xml2tex` and
@@ -89,7 +173,25 @@ Verification artifacts and per-issue root-cause notes live in
   `front-page-layout` branches (`branch = front-page-layout` in `.gitmodules`), and are
   pinned to the fork commits listed below.
 
-## docx2hub fork — 4 commits ahead of master
+## docx2hub fork — 7 commits ahead of master
+
+- **Accept capitalized built-in heading names when rewriting styleIds** (`86db888`):
+  Word built-in styles are stored as lowercase `heading 1`, but some authoring tools
+  write `Heading 1` (capitalized) with numeric styleIds (e.g. 1278). The case-sensitive
+  regex never matched, so paragraphs kept `_1278`-style roles that no conf template
+  recognizes and numbered headings fell through to enumerate lists. The name match and
+  the `heading ` strip in the `Heading{N}` rewrite are now case-insensitive.
+- **Surface section page-number format/restart and section boundaries** (`9d58a9d`): the
+  add-props pass captures each `sectPr`'s `w:pgNumType` as `css:page-number-*` on the
+  sectPr marker paras; wml-to-dbk flags the paragraph that ends a section
+  (`docx2hub:section-end`) and copies the page-number attributes of the section that
+  begins after the break onto it, so downstream converters can switch numbering at Word
+  section boundaries.
+- **Surface per-section page margins and header distance** (`21d7839`): each `sectPr`'s
+  `w:pgMar` (top/bottom/left/right, twips → pt) and `w:header` distance are captured as
+  `css:page-margin-*`/`css:page-header-distance` on the marker paras and copied onto the
+  section-break paragraphs (final section via the body-level sectPr), enabling
+  per-section `\newgeometry` downstream.
 
 - **Surface page geometry, header/footer part rels and section page breaks** (`305578a`):
   the first section's `pgSz`/`pgMar` are emitted as `css:*` attributes on the hub root;
