@@ -272,6 +272,16 @@ known-good state re-checked (the guard caught one bad interaction before commit)
   `tr:css-length-to-pt` helper now converts in/cm/mm/pc/px to pt (unitless = pt,
   unparseable values fall back), also for the page-margin bases; the two boxes
   sit at 432/648pt as in the reference.
+- **example3 known-good state + guard script** (base repo, conf): the regression
+  guard now has measured invariants for the second document
+  (`.zcode/plans/example3-known-good.md`, full-diff style: 5 Letter pages, 0
+  errors, unnumbered headings, 13 middot bullets, Arial+Times faces, ~21.6pt
+  1.5-spacing pitch, screenshot placement, no metadata leaks) and
+  `.zcode/verify-known-good.sh` automates 22 checks across all three examples.
+  Measuring it surfaced one leak, fixed here: the Word image title (docx2hub's
+  `dbk:mediaobject/dbk:info`) printed as literal text above the screenshot
+  ("Amend Default Styles"); info is now suppressed like `alt` (only example3's
+  mediaobject carries one, so the other examples' texs are unchanged).
 - **Lato-only fonts: no ArialMT, bullets restored** (base repo, conf): ArialMT
   was used by a single glyph — the class default footer page number, emitted
   because the `\pagestyle{empty}` suppression sat inside the

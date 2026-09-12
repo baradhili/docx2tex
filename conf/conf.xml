@@ -766,6 +766,9 @@
   </template>
   
   <template context="dbk:alt"/>
+  <!-- Word image metadata (docx2hub puts the image title here) renders
+       nowhere in Word — suppress it like alt -->
+  <template context="dbk:mediaobject/dbk:info"/>
 
   <!-- Word floating text boxes (VML fallback shapes with position:absolute):
        render the box's paragraphs at the Word coordinates. Offsets are relative
