@@ -282,6 +282,18 @@ known-good state re-checked (the guard caught one bad interaction before commit)
   `dbk:mediaobject/dbk:info`) printed as literal text above the screenshot
   ("Amend Default Styles"); info is now suppressed like `alt` (only example3's
   mediaobject carries one, so the other examples' texs are unchanged).
+- **Text-box wrapping matches Word: exact tracking + VML insets** (base repo,
+  conf): resume box lines wrapped earlier than Word for two model reasons.
+  Soul's default `\so` letterspaces at .25em (≈2.1pt at 8.5pt) where Word
+  declares absolute points (0.85–4.2pt here) — the conf now defines one
+  `\sodef` command per distinct tracking value (letterskip = the declared pt,
+  space = the font's natural interword space + tracking) and the emission
+  template picks the phrase's value (small ≥0.3pt trackings included now that
+  they are exact). And the VML textbox default internal margins (7.2pt
+  left/right, 3.6pt top/bottom) were ignored — the textblock/parbox now uses
+  box + inset geometry, which also moved the columns/name to their reference
+  x-positions. Line breaks now match the reference document-wide (47 rendered
+  lines in both); guard 22/22, example2 tex byte-identical.
 - **Classification marking put at the reference baseline** (base repo, conf): the
   OFFICIAL marking's eso-pic shipout put the box 30pt below the page top, but the
   put reference point renders ~3pt above the text baseline and the reference

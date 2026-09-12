@@ -202,6 +202,23 @@
         <xsl:text>\font\SOUL@tt=[lmmono10-regular.otf]\relax&#xa;</xsl:text>
         <xsl:text>\setbox\z@\hbox{\SOUL@tt-}\SOUL@ttwidth\wd\z@&#xa;</xsl:text>
         <xsl:text>\fi\makeatother&#xa;</xsl:text>
+        <!-- one letterspacing command per distinct Word tracking value: soul's
+             default \so spaces at .25em (2.1pt at 8.5pt) where Word declares
+             absolute points (0.85–0.9pt here) — the wider tracking made lines
+             wrap well before Word. Letterskip = the declared pt value, the
+             space = the font's natural interword space plus the tracking
+             (evaluated at use time, so it scales with the current font). -->
+        <xsl:for-each select="$docx-letterspacings[position() le 26]">
+          <xsl:text>\sodef\docxso</xsl:text>
+          <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', position(), 1)"/>
+          <xsl:text>{}{</xsl:text>
+          <xsl:value-of select="."/>
+          <xsl:text>pt}{\dimexpr\fontdimen2\font+</xsl:text>
+          <xsl:value-of select="."/>
+          <xsl:text>pt\relax}{</xsl:text>
+          <xsl:value-of select="."/>
+          <xsl:text>pt}&#xa;</xsl:text>
+        </xsl:for-each>
       </xsl:if>
     </xsl:if>
     \usepackage{arydshln}
@@ -609,10 +626,32 @@
   <xsl:variable name="text-style-elements" select="'phrase', 'superscript', 'subscript'" as="xs:string+"/>
 
   <template context="*[local-name() = $text-style-elements]
-                      [   (@css:letter-spacing and xs:double(replace(@css:letter-spacing, '[a-z]+$', '')) gt 0.5)
-                       or (exists(key('style', @role)[@css:letter-spacing[xs:double(replace(., '[a-z]+$', '')) gt 0.5]]) 
-                           and not(@css:letter-spacing[xs:double(replace(., '[a-z]+$', '')) le 0.5]))]">
-    <xsl:value-of select="if ($letter-spacing-def = 'soul') then '\so{' else '\textls{'"/>
+                      [   (@css:letter-spacing and xs:double(replace(@css:letter-spacing, '[a-z]+$', '')) ge 0.3)
+                       or (exists(key('style', @role)[@css:letter-spacing[xs:double(replace(., '[a-z]+$', '')) ge 0.3]]) 
+                           and not(@css:letter-spacing[xs:double(replace(., '[a-z]+$', '')) lt 0.3]))]">
+    <xsl:choose>
+      <xsl:when test="$letter-spacing-def eq 'soul'">
+        <!-- the command whose letterskip equals the phrase's declared Word
+             tracking (soul's default \so would space at .25em) -->
+        <xsl:variable name="tracking" as="xs:string"
+                      select="replace((@css:letter-spacing, key('style', @role)/@css:letter-spacing)[1], '[a-z]+$', '')"/>
+        <xsl:variable name="slot" as="xs:integer?"
+                      select="index-of($docx-letterspacings, $tracking)"/>
+        <xsl:choose>
+          <xsl:when test="exists($slot)">
+            <xsl:text>\docxso</xsl:text>
+            <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', $slot, 1)"/>
+            <xsl:text>{</xsl:text>
+          </xsl:when>
+          <xsl:otherwise>
+            <xsl:text>\so{</xsl:text>
+          </xsl:otherwise>
+        </xsl:choose>
+      </xsl:when>
+      <xsl:otherwise>
+        <xsl:text>\textls{</xsl:text>
+      </xsl:otherwise>
+    </xsl:choose>
     <xsl:next-match/>
     <xsl:text>}</xsl:text>
   </template>
@@ -789,15 +828,23 @@
     <xsl:variable name="width" select="(tr:css-length-to-pt(substring-after($vml-width, ':')), 0e0)[1]" as="xs:double"/>
     <xsl:variable name="page-left" select="(tr:css-length-to-pt(/dbk:hub/@css:margin-left), 72e0)[1]" as="xs:double"/>
     <xsl:variable name="page-top" select="(tr:css-length-to-pt(/dbk:hub/@css:margin-top), 72e0)[1]" as="xs:double"/>
-    <!-- textpos module arguments are plain numbers (1pt modules), no units -->
+    <!-- VML default textbox insets: 0.1in (7.2pt) left/right, 0.05in (3.6pt)
+         top/bottom (no shape in these documents declares @inset). Word starts
+         the text at box + left inset and wraps at box width minus both insets;
+         using the full box width made lines wrap later than Word and shifted
+         every box's text a few points left of the reference. -->
+    <xsl:variable name="inset-x" select="7.2e0" as="xs:double"/>
+    <xsl:variable name="inset-y" select="3.6e0" as="xs:double"/>
+    <!-- textpos module arguments are plain numbers (1pt modules), no units;
+         the box geometry is inset by the VML default internal margins -->
     <xsl:text>\begin{textblock}{</xsl:text>
-    <xsl:value-of select="round($width * 10) div 10"/>
+    <xsl:value-of select="round(($width - 2 * $inset-x) * 10) div 10"/>
     <xsl:text>}(</xsl:text>
-    <xsl:value-of select="round(($page-left + $left) * 10) div 10"/>
+    <xsl:value-of select="round(($page-left + $left + $inset-x) * 10) div 10"/>
     <xsl:text>,</xsl:text>
-    <xsl:value-of select="round(($page-top + $top) * 10) div 10"/>
+    <xsl:value-of select="round(($page-top + $top + $inset-y) * 10) div 10"/>
     <xsl:text>)\parbox[t]{</xsl:text>
-    <xsl:value-of select="round($width * 10) div 10"/>
+    <xsl:value-of select="round(($width - 2 * $inset-x) * 10) div 10"/>
     <xsl:text>pt}{</xsl:text>
     <xsl:apply-templates select="v:shape/v:textbox/element()" mode="#current"/>
     <xsl:text>}\end{textblock}</xsl:text>
@@ -2031,6 +2078,15 @@
        preamble into a \docxhffont<n> macro. -->
   <xsl:variable name="docx-hf-fonts" as="xs:string*"
                 select="distinct-values(//dbk:phrase/@css:font-family)"/>
+
+  <!-- distinct Word letter-spacing values (pt, absolute) that get soul
+       letterspacing (the &gt;=0.3pt filter mirrors the emission template) -->
+  <xsl:variable name="docx-letterspacings" as="xs:string*"
+                select="distinct-values(
+                          (//dbk:phrase/@css:letter-spacing,
+                           //css:rule/@css:letter-spacing)
+                          [number(replace(., '[a-z]+$', '')) ge 0.3]
+                          /replace(., '[a-z]+$', ''))"/>
   <template context="dbk:phrase[ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')]][@css:font-family]">
     <xsl:text>\ifPDFTeX\else\docxhffont</xsl:text>
     <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', index-of($docx-hf-fonts, @css:font-family), 1)"/>
