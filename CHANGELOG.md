@@ -282,6 +282,14 @@ known-good state re-checked (the guard caught one bad interaction before commit)
   `dbk:mediaobject/dbk:info`) printed as literal text above the screenshot
   ("Amend Default Styles"); info is now suppressed like `alt` (only example3's
   mediaobject carries one, so the other examples' texs are unchanged).
+- **KOMA "not recommended" advisories filtered** (base repo, conf): scrbook
+  warns against fancyhdr and titlesec with KOMA classes (suggesting
+  scrlayer-scrpage / KOMA's own sectioning). Both are deliberate load-bearing
+  choices here (per-Word-section `\fancypagestyle`, rule widths,
+  `\headruleskip`; one `\titleformat` per docx Heading style) and none of the
+  KOMA features the advisories gate are used, so the preamble now loads
+  `silence` early with `\WarningFilter{scrbook}{Usage of package}` — build
+  logs are advisory-free for all three examples (0 errors, guard 22/22).
 - **Text-box wrapping matches Word: exact tracking + VML insets** (base repo,
   conf): resume box lines wrapped earlier than Word for two model reasons.
   Soul's default `\so` letterspaces at .25em (≈2.1pt at 8.5pt) where Word
