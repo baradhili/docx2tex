@@ -272,6 +272,17 @@ known-good state re-checked (the guard caught one bad interaction before commit)
   `tr:css-length-to-pt` helper now converts in/cm/mm/pc/px to pt (unitless = pt,
   unparseable values fall back), also for the page-margin bases; the two boxes
   sit at 432/648pt as in the reference.
+- **Lato-only fonts: no ArialMT, bullets restored** (base repo, conf): ArialMT
+  was used by a single glyph — the class default footer page number, emitted
+  because the `\pagestyle{empty}` suppression sat inside the
+  `exists(docx-headers)` block. The reference (a docx without footer parts)
+  prints no page number at all; the suppression now also emits for headerless
+  documents (fancyhdr loaded just for the plain redefinition). Separately, all
+  11 bullet glyphs were silently dropped — soul analyses `\so{}` arguments in
+  a hardcoded 8-bit ectt1000 that lacks U+2022; the preamble redefines
+  `\SOUL@tt` to lmmono10-regular.otf under LuaLaTeX (hyphen width re-measured),
+  so bullets render from the document font. The PDF now embeds the five Lato
+  faces only, 0 errors, 0 missing-character warnings.
 
 ### Submodule wiring
 
