@@ -282,6 +282,24 @@ known-good state re-checked (the guard caught one bad interaction before commit)
   `dbk:mediaobject/dbk:info`) printed as literal text above the screenshot
   ("Amend Default Styles"); info is now suppressed like `alt` (only example3's
   mediaobject carries one, so the other examples' texs are unchanged).
+- **Anchored vector art placed at its Word coordinates** (docx2hub `e06de91`,
+  base repo conf + d2t): the resume's decorative vector shapes rendered inline
+  in the flow (and shrunk). Fix chain: drawingml2svg scales group children's
+  drawn extent by the group's ext/chExt factor (positions were mapped, sizes
+  stayed in child space — ~24 % too small); paragraph-anchored art drops the
+  paragraphs-before × line-pitch pos-y term (the anchor paragraphs have no
+  height in Word, matching the VML/raster margin+offset formula), making the
+  d2s coordinates true page points; the wml-to-dbk svg template reads the
+  anchor attrs from the svg itself (the ancestor lookup never fired) and puts
+  css:position-* on the imagedata; the page-sized #bee0cd debug rect is
+  dropped; the conf places anchored svgs as textpos textblocks at the viewBox
+  offset behind following content; rsvg-convert now runs with -d/-p 72 (it
+  read unitless svg sizes as 96 dpi px and shrank every converted PDF to
+  75 % — the contact icons' "coarse size" was this). Result: the background
+  group renders 612×792 at (0,0) behind the text (full-page colour histogram
+  within ~1 % of the reference, purple band 0–89pt exact), chevrons sit at
+  their headings, corner clusters at their anchors; guard 22/22 with
+  example2/3 texs byte-identical.
 - **Lato-only fonts: no ArialMT, bullets restored** (base repo, conf): ArialMT
   was used by a single glyph — the class default footer page number, emitted
   because the `\pagestyle{empty}` suppression sat inside the

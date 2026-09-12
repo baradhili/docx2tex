@@ -235,10 +235,12 @@ HEAP=$HEAP "$CALABASH" \
 echo "writing texfile => $OUT_DIR/$BASENAME.tex"
 
 # convert SVGs written by the pipeline (drawingml2svg shapes) to PDF for
-# LuaLaTeX inclusion; the tex references <name>-svg-<n>.pdf next to the .svg
+# LuaLaTeX inclusion; the tex references <name>-svg-<n>.pdf next to the .svg.
+# -d/-p 72: the svgs carry unitless width/height in Word points, but
+# rsvg-convert reads them as px (96dpi) and would shrink every PDF to 75%
 SVG_COUNT=0
 for svg in $(find "$OUT_DIR" -name "$BASENAME-svg-*.svg" 2>/dev/null); do
-    if rsvg-convert -f pdf -o "${svg%.svg}.pdf" "$svg" 2>>"$LOG"; then
+    if rsvg-convert -d 72 -p 72 -f pdf -o "${svg%.svg}.pdf" "$svg" 2>>"$LOG"; then
         SVG_COUNT=$((SVG_COUNT+1))
     else
         echo "warning: could not convert $svg to PDF" >> "$LOG"

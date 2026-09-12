@@ -860,10 +860,34 @@
          cannot include .svg), so the tex references the .pdf relatively through
          that path. Degenerate conversions (zero width) are written for debug
          but not referenced. -->
+    <!-- anchored vector art (docx2hub remembers the wp:anchor on the parent
+         imagedata): the d2s coordinates are page points, so the svg's viewBox
+         offset is the art's page position — place the natural-size image there
+         (textpos 1pt modules), behind whatever content follows in the flow -->
+    <xsl:variable name="anchored" as="element(dbk:imagedata)?"
+                  select="ancestor::dbk:imagedata[@css:position-left][@css:position-top]
+                                            [not(ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')])]"/>
+    <xsl:variable name="vb" select="tokenize(normalize-space(@viewBox), '\s+')" as="xs:string*"/>
     <xsl:if test="@width[number(replace(., '[a-z]+$', '')) gt 0]">
-      <rule name="includegraphics" type="cmd">
-        <param select="concat($basename, '.docx.tmp/word/', $basename, '-svg-', $svg-index, '.pdf')"/>
-      </rule>
+      <xsl:choose>
+        <xsl:when test="exists($anchored) and count($vb) eq 4
+                        and $vb[1][. castable as xs:double] and $vb[2][. castable as xs:double]">
+          <xsl:text>\begin{textblock}{</xsl:text>
+          <xsl:value-of select="round(number(replace(@width, '[a-z]+$', '')) * 10) div 10"/>
+          <xsl:text>}(</xsl:text>
+          <xsl:value-of select="round(number($vb[1]) * 10) div 10"/>
+          <xsl:text>,</xsl:text>
+          <xsl:value-of select="round(number($vb[2]) * 10) div 10"/>
+          <xsl:text>)\includegraphics{</xsl:text>
+          <xsl:value-of select="concat($basename, '.docx.tmp/word/', $basename, '-svg-', $svg-index, '.pdf')"/>
+          <xsl:text>}\end{textblock}</xsl:text>
+        </xsl:when>
+        <xsl:otherwise>
+          <rule name="includegraphics" type="cmd">
+            <param select="concat($basename, '.docx.tmp/word/', $basename, '-svg-', $svg-index, '.pdf')"/>
+          </rule>
+        </xsl:otherwise>
+      </xsl:choose>
     </xsl:if>
     <file href="{$svg-path}" encoding="utf-8" method="xml"/>
   </template>
