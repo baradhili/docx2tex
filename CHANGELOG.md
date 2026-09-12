@@ -282,6 +282,14 @@ known-good state re-checked (the guard caught one bad interaction before commit)
   `dbk:mediaobject/dbk:info`) printed as literal text above the screenshot
   ("Amend Default Styles"); info is now suppressed like `alt` (only example3's
   mediaobject carries one, so the other examples' texs are unchanged).
+- **Classification marking put at the reference baseline** (base repo, conf): the
+  OFFICIAL marking's eso-pic shipout put the box 30pt below the page top, but the
+  put reference point renders ~3pt above the text baseline and the reference
+  (Word) places the 10pt Calibri baseline at 24.5pt — ours landed 8.5pt too low
+  (33.0pt). The put origin is now `pageHeight − 21.5`: measured baseline 24.6pt
+  vs the reference's 24.5pt on pages 1/2/6. Example3's marking put is
+  contentless (coordinate change only); example4 has no header parts. Guard
+  22/22.
 - **Anchored vector art placed at its Word coordinates** (docx2hub `e06de91`,
   base repo conf + d2t): the resume's decorative vector shapes rendered inline
   in the flow (and shrunk). Fix chain: drawingml2svg scales group children's

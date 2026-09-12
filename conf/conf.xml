@@ -327,9 +327,11 @@
            re-added after the shipout stack is cleared for a later section -->
       <xsl:text>\newcommand{\docxmarking}{%&#xa;</xsl:text>
       <xsl:variable name="hdr" select="$docx-headers[1]" as="element(dbk:div)"/>
-      <!-- marking text: baseline 30pt below the page top (Word header distance 25.5pt).
-           Word anchors the classification-marking textbox centered on the page
-           (mso-position-horizontal:center relative to page) -->
+      <!-- marking text: Word anchors the classification-marking textbox at the
+           page top, centered (mso-position-horizontal-relative:page); the
+           reference renders the 10pt Calibri OFFICIAL baseline 24.5pt below the
+           page top. The \put reference point itself renders ~3pt above the text
+           baseline, so the put goes 21.5pt below the page top. -->
       <xsl:variable name="marking-page-centered" as="xs:boolean"
                     select="exists($hdr//dbk:phrase[@role eq 'hub:foreign']//@style
                                      [contains(., 'mso-position-horizontal-relative:page')]
@@ -337,12 +339,12 @@
       <xsl:choose>
         <xsl:when test="$marking-page-centered">
           <xsl:text>  \put(\LenToUnit{0.5\paperwidth},</xsl:text>
-          <xsl:value-of select="number(replace(/dbk:hub/@css:page-height, '[a-z]+$', '')) - 30"/>
+          <xsl:value-of select="number(replace(/dbk:hub/@css:page-height, '[a-z]+$', '')) - 21.5"/>
           <xsl:text>){\makebox[0pt][c]{%&#xa;</xsl:text>
         </xsl:when>
         <xsl:otherwise>
           <xsl:text>  \put(56.7,</xsl:text>
-          <xsl:value-of select="number(replace(/dbk:hub/@css:page-height, '[a-z]+$', '')) - 30"/>
+          <xsl:value-of select="number(replace(/dbk:hub/@css:page-height, '[a-z]+$', '')) - 21.5"/>
           <xsl:text>){%&#xa;</xsl:text>
         </xsl:otherwise>
       </xsl:choose>
