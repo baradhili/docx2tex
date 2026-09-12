@@ -83,6 +83,24 @@
     <xsl:param name="type" as="xs:string"/><!-- P or Artifact-->
     <xsl:sequence select="if ($a11y) then  concat('\ccaVstruct', $pos, '{', $type, '}')  else ()"/>
   </xsl:function>
+
+  <!-- VML shape styles carry CSS units and Word writes any of them
+       (e.g. 'margin-top:5in'); a bare number means points. Convert per unit;
+       values that are not a plain length yield the empty sequence. -->
+  <xsl:function name="tr:css-length-to-pt" as="xs:double?">
+    <xsl:param name="length" as="xs:string?"/>
+    <xsl:analyze-string select="normalize-space($length)" regex="^([+-]?[0-9.]+)\s*(pt|in|cm|mm|pc|px)?$">
+      <xsl:matching-substring>
+        <xsl:sequence select="xs:double(regex-group(1))
+                              * (if (regex-group(2) eq 'in') then 72e0
+                                 else if (regex-group(2) eq 'cm') then 72e0 div 2.54e0
+                                 else if (regex-group(2) eq 'mm') then 72e0 div 25.4e0
+                                 else if (regex-group(2) eq 'pc') then 12e0
+                                 else if (regex-group(2) eq 'px') then 0.75e0
+                                 else 1e0)"/>
+      </xsl:matching-substring>
+    </xsl:analyze-string>
+  </xsl:function>
   
   <!-- tex document header, set declarations such as documentclass and usepackage -->
   <preamble>% docx2tex 1.10 --- ``TeX without any tariffs (local regulations may vary)''
@@ -742,11 +760,11 @@
                   select="(tokenize($style, ';')[normalize-space(substring-before(., ':')) eq 'margin-top'], '0pt')[1]"/>
     <xsl:variable name="vml-width" as="xs:string"
                   select="(tokenize($style, ';')[normalize-space(substring-before(., ':')) eq 'width'], '0pt')[1]"/>
-    <xsl:variable name="left" select="number(replace(normalize-space(substring-after($vml-left, ':')), '[a-z]+$', ''))" as="xs:double"/>
-    <xsl:variable name="top" select="number(replace(normalize-space(substring-after($vml-top, ':')), '[a-z]+$', ''))" as="xs:double"/>
-    <xsl:variable name="width" select="number(replace(normalize-space(substring-after($vml-width, ':')), '[a-z]+$', ''))" as="xs:double"/>
-    <xsl:variable name="page-left" select="number(replace((/dbk:hub/@css:margin-left, '72pt')[1], '[a-z]+$', ''))" as="xs:double"/>
-    <xsl:variable name="page-top" select="number(replace((/dbk:hub/@css:margin-top, '72pt')[1], '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="left" select="(tr:css-length-to-pt(substring-after($vml-left, ':')), 0e0)[1]" as="xs:double"/>
+    <xsl:variable name="top" select="(tr:css-length-to-pt(substring-after($vml-top, ':')), 0e0)[1]" as="xs:double"/>
+    <xsl:variable name="width" select="(tr:css-length-to-pt(substring-after($vml-width, ':')), 0e0)[1]" as="xs:double"/>
+    <xsl:variable name="page-left" select="(tr:css-length-to-pt(/dbk:hub/@css:margin-left), 72e0)[1]" as="xs:double"/>
+    <xsl:variable name="page-top" select="(tr:css-length-to-pt(/dbk:hub/@css:margin-top), 72e0)[1]" as="xs:double"/>
     <!-- textpos module arguments are plain numbers (1pt modules), no units -->
     <xsl:text>\begin{textblock}{</xsl:text>
     <xsl:value-of select="round($width * 10) div 10"/>

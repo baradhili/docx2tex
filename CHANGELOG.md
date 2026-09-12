@@ -265,6 +265,13 @@ known-good state re-checked (the guard caught one bad interaction before commit)
   resume's two-column layout renders; header/footer shapes and margin-less shapes
   are excluded (the classification marking would otherwise produce NaN
   coordinates — caught by the example2 guard).
+- **VML length units are honoured** (base repo, conf): the text-box template read
+  `margin-left/top` and `width` by stripping the unit and treating the number as
+  pt, so Word's `margin-top:5in`/`8in` boxes landed at y≈77/80pt over the name
+  and header (the visible "D i r e cCourse" garbling and stacked job titles). A
+  `tr:css-length-to-pt` helper now converts in/cm/mm/pc/px to pt (unitless = pt,
+  unparseable values fall back), also for the page-margin bases; the two boxes
+  sit at 432/648pt as in the reference.
 
 ### Submodule wiring
 
