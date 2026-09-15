@@ -339,6 +339,32 @@ known-good state re-checked (the guard caught one bad interaction before commit)
   `\SOUL@tt` to lmmono10-regular.otf under LuaLaTeX (hyphen width re-measured),
   so bullets render from the document font. The PDF now embeds the five Lato
   faces only, 0 errors, 0 missing-character warnings.
+- **Word exact line rules and textbox spacer paragraphs render** (base repo,
+  conf + preprocess): the resume sets line spacing with `w:lineRule="exact"`
+  (`w:line="260"`=13pt, `"380"`=19pt) on every content paragraph, but the
+  pt-valued `css:line-height` had no LaTeX emitter (only unitless multiples
+  did), so boxes fell back to the hardcoded 1.15×size leading — 9.8/11.5pt
+  where Word paces 13pt. Three defects fixed together: (a) the paragraph
+  `\fontsize` wrapper now uses a pt line-height (exact/atLeast) as the
+  baselineskip, floored at the natural leading; (b) textbox paragraphs end
+  with an explicit `\par` inside their font group — the last paragraph of a
+  box previously broke at the parbox end after the group closed, taking the
+  ambient leading (the profile summary rendered at 26.4pt pitch: a leaked
+  `{\fontsize{23pt}{26.5pt}` anchor-paragraph group spanned the whole body
+  because the paragraph's effective size counted the textbox runs inside its
+  floating shapes; only the paragraph's own runs count now); (c) the
+  preprocess keeps empty paragraphs inside body v:textboxes (Word's spacer
+  lines — the skills box alternates labels with empty 19pt paragraphs) and
+  the conf renders an empty paragraph as `\null\par` so it actually occupies
+  its exact line height (a bare `\par` in vertical mode is a no-op). Box
+  first baselines are placed by Word's rule (box top + inset + line height −
+  descent ≈ 0.25em) via a zero-height `\null` reference line, replacing the
+  font-ascent-dependent `\parbox[t]` offset. Measured against the OnlyOffice
+  reference: line pitches 12.95 vs 13.0pt and 18.93/37.86 vs 19/38pt, skills
+  label↔triangle rows alternate exactly as in the reference, every box's
+  first line within −0.4…−2.1pt (was −5…−14pt); inter-box rhythm within
+  ~0.3pt. Guard 22/22, example2/3 unaffected (example2's only pt line-height
+  sits on an empty paragraph that emits nothing).
 
 ### Submodule wiring
 
@@ -349,5 +375,6 @@ known-good state re-checked (the guard caught one bad interaction before commit)
   upstream pins — fork when first changed.
 
 Known open items for the resume (`.zcode/plans/futher-fixes.md`): the portrait
-photo (a shape `blipFill` swallowed by drawingml2svg) and in-box spacing
-fine-tuning.
+photo (a shape `blipFill` swallowed by drawingml2svg) and contact-icon fine
+alignment. In-box line spacing now matches the reference (see the exact line
+rules item above).

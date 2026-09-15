@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" 
+<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
   xmlns:dbk="http://docbook.org/ns/docbook"
-  xmlns:css="http://www.w3.org/1996/css" 
+  xmlns:css="http://www.w3.org/1996/css"
+  xmlns:v="urn:schemas-microsoft-com:vml"
   xmlns:hub="http://transpect.io/hub"
   xmlns:mml="http://www.w3.org/1998/Math/MathML" 
   xmlns:tr="http://transpect.io"
@@ -351,9 +352,14 @@
   </xsl:template>
   
   <!-- remove empty paragraphs #13946; keep those that carry a page break
-       (Word section breaks are marked on the empty sectPr paragraph) -->
+       (Word section breaks are marked on the empty sectPr paragraph).
+       Inside floating body textboxes an empty paragraph is Word's vertical
+       spacer: it occupies its own exact line height, so keep it there
+       (header/footer boxes render in restricted horizontal mode). -->
 
-  <xsl:template match="para[not(.//text()) or (every $i in .//text() satisfies matches($i, '^\s+$'))][not(* except tab)][not(@css:page-break-after)]" mode="docx2tex-preprocess"/>
+  <xsl:template match="para[not(.//text()) or (every $i in .//text() satisfies matches($i, '^\s+$'))][not(* except tab)][not(@css:page-break-after)]
+                       [not(ancestor::v:textbox) or ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')]]"
+                mode="docx2tex-preprocess"/>
   
   <!-- resolve carriage returns in empty paragraphs. the paragraph will cause a break as well #14306 -->
   

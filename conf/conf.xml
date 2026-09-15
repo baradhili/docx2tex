@@ -843,6 +843,18 @@
          every box's text a few points left of the reference. -->
     <xsl:variable name="inset-x" select="7.2e0" as="xs:double"/>
     <xsl:variable name="inset-y" select="3.6e0" as="xs:double"/>
+    <!-- Word/OnlyOffice place the first line's baseline at box top + inset +
+         line height - descent (descent ~ 0.25em); the paragraph-level \null
+         reference line (see the para font-size template) puts the first
+         baseline exactly at textblock y + line height, so the y sheds the
+         descent; +1pt calibrates the reference's own sub-point overshoot -->
+    <xsl:variable name="first-para" as="element(dbk:para)?"
+                  select="(v:shape/v:textbox/w:txbxContent/dbk:para)[1]"/>
+    <xsl:variable name="first-size" as="xs:double"
+                  select="(max(for $s in ($first-para//dbk:phrase[ancestor::dbk:para[1] is $first-para]/@css:font-size,
+                                       $first-para/@css:font-size,
+                                       key('style', $first-para/@role)/@css:font-size)
+                          return number(replace($s, '[a-z]+$', ''))[. = .]), 12e0)[1]"/>
     <!-- textpos module arguments are plain numbers (1pt modules), no units;
          the box geometry is inset by the VML default internal margins -->
     <xsl:text>\begin{textblock}{</xsl:text>
@@ -850,7 +862,7 @@
     <xsl:text>}(</xsl:text>
     <xsl:value-of select="round(($page-left + $left + $inset-x) * 10) div 10"/>
     <xsl:text>,</xsl:text>
-    <xsl:value-of select="round(($page-top + $top + $inset-y) * 10) div 10"/>
+    <xsl:value-of select="round(($page-top + $top + $inset-y - 0.25 * $first-size + 1) * 10) div 10"/>
     <xsl:text>)\parbox[t]{</xsl:text>
     <xsl:value-of select="round(($width - 2 * $inset-x) * 10) div 10"/>
     <xsl:text>pt}{</xsl:text>
@@ -2124,22 +2136,69 @@
   </template>
 
   <!-- font size for the whole paragraph, including its \par (Word derives the
-       line height from the tallest run; runs override the paragraph style) -->
-  <template context="dbk:para[exists(.//dbk:phrase/@css:font-size) or exists(key('style', @role)/@css:font-size)]">
+       line height from the tallest run; runs override the paragraph style).
+       Only the paragraph's own runs count: phrases inside a nested floating
+       textbox belong to that box's paragraphs, so an anchor paragraph holding
+       only shapes must not wrap the whole body in the shapes' largest font.
+       A pt-valued css:line-height (Word lineRule exact/atLeast) becomes the
+       baselineskip, floored at the natural 1.15 x size leading (atLeast
+       semantics; exact values below the natural leading are rare and would
+       clip in Word). Inside a body v:textbox the wrapper ends with an explicit
+       \par: the last paragraph of a box has no separator \par, and the
+       implicit one at the parbox end would run after the group closed, taking
+       the ambient font's leading instead of the paragraph's own. -->
+  <template context="dbk:para[exists(.//dbk:phrase/@css:font-size)
+                               or exists(key('style', @role)/@css:font-size)
+                               or exists(@css:line-height[matches(., 'pt$')])]">
+    <xsl:variable name="own-phrases" as="element(dbk:phrase)*"
+                  select=".//dbk:phrase[ancestor::dbk:para[1] is current()]"/>
+    <xsl:variable name="lh-pt" as="xs:double?"
+                  select="number(replace(@css:line-height[matches(., 'pt$')], 'pt$', ''))[. = .]"/>
+    <!-- header/footer boxes render in restricted horizontal mode, no \par there -->
+    <xsl:variable name="in-textbox" as="xs:boolean"
+                  select="exists(ancestor::v:textbox)
+                          and not(ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')])"/>
     <xsl:variable name="eff-size" as="xs:double?"
-                  select="max(for $s in (if (exists(.//dbk:phrase/@css:font-size))
-                                         then .//dbk:phrase/@css:font-size
-                                         else (@css:font-size, key('style', @role)/@css:font-size))
-                                     return number(replace($s, '[a-z]+$', '')))"/>
-    <xsl:if test="exists($eff-size) and $eff-size ne 12">
+                  select="(max(for $s in (if (exists($own-phrases/@css:font-size))
+                                          then $own-phrases/@css:font-size
+                                          else (@css:font-size, key('style', @role)/@css:font-size))
+                                      return number(replace($s, '[a-z]+$', ''))[. = .]),
+                          if ($in-textbox or exists($lh-pt)) then 12 else (),
+                         ())[1]"/>
+    <xsl:variable name="baseline" as="xs:double?"
+                  select="if (empty($eff-size)) then ()
+                          else if (exists($lh-pt))
+                          then max(($lh-pt, round($eff-size * 1.15 * 10) div 10))
+                          else round($eff-size * 1.15 * 10) div 10"/>
+    <xsl:variable name="wrap" as="xs:boolean"
+                  select="exists($eff-size) and ($eff-size ne 12 or $in-textbox or exists($lh-pt))"/>
+    <xsl:if test="$wrap">
       <xsl:text>{\fontsize{</xsl:text>
       <xsl:value-of select="$eff-size"/>
       <xsl:text>pt}{</xsl:text>
-      <xsl:value-of select="round($eff-size * 1.15 * 10) div 10"/>
+      <xsl:value-of select="round($baseline * 10) div 10"/>
       <xsl:text>pt}\selectfont </xsl:text>
+      <!-- a zero-height line whose baseline defines the parbox reference: the
+           first text baseline then lands exactly at textblock y + line height,
+           independent of the first line's font ascent (Word's rule, see the
+           textbox template) -->
+      <xsl:if test="$in-textbox
+                    and not(preceding-sibling::dbk:para)
+                    and normalize-space(string(.))">
+        <xsl:text>\null\par </xsl:text>
+      </xsl:if>
     </xsl:if>
     <xsl:next-match/>
-    <xsl:if test="exists($eff-size) and $eff-size ne 12">
+    <xsl:if test="$wrap">
+      <xsl:if test="$in-textbox">
+        <!-- an empty paragraph is Word's spacer line: \null starts horizontal
+             mode so the \par actually creates a line box at the paragraph's
+             own line height (a bare \par in vertical mode is a no-op) -->
+        <xsl:if test="not(normalize-space(string(.)))">
+          <xsl:text>\null </xsl:text>
+        </xsl:if>
+        <xsl:text>\par</xsl:text>
+      </xsl:if>
       <xsl:text>}</xsl:text>
     </xsl:if>
   </template>
