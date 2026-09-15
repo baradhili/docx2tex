@@ -19,7 +19,11 @@ Verification artifacts and per-issue root-cause notes live in
 `.zcode/plans/page1-diff-docx2tex-vs-onlyoffice.md` and
 `.zcode/plans/full-diff.md`.
 
-## Base repo (docx2tex) — 22 commits ahead of master
+## Base repo (docx2tex) — `front-page-layout` vs pre-merge master
+
+(The `front-page-layout` branch was squash-merged into master as `0e00985`
+"Handle more complex/messy word layout and styling(#1)"; the sections above
+document that pass. The `further-fixes` pass below is 10 commits on top.)
 
 ### Word page layout → LaTeX geometry
 
@@ -200,10 +204,177 @@ See [docx2hub/CHANGELOG.md](docx2hub/CHANGELOG.md) for the per-commit details.
 
 ## xml2tex fork — 1 commit ahead of master
 
-CALS table row shading (`owcolor`) and border rule colours (`rrayrulecolor`) in
+CALS table row shading (`
+owcolor`) and border rule colours (`rrayrulecolor`) in
 `calstable2tabular`, so Word table styling (navy header rows, grey grids) renders as in
 the reference. See [xml2tex/CHANGELOG.md](xml2tex/CHANGELOG.md).
 
 ## mml2tex fork
 
 No changes on `front-page-layout` (pinned at master).
+
+## `further-fixes` pass — second and third documents (example03, resume)
+
+Driven by two more reference documents (`.zcode/example3` "Word Documents
+Template", `.zcode/example4` one-page resume), each verified against its OnlyOffice
+render. After every fix, all previously matching documents were rebuilt and their
+known-good state re-checked (the guard caught one bad interaction before commit).
+
+### example03 — whole-document fidelity
+
+- **Unnumbered Word headings stay unnumbered** (`735ce58`): documents whose heading
+  styles carry no list numbering got LaTeX numbers Word does not show. When no
+  headline paragraph carries a Word number (detected via the `\label{mark-…}` PIs
+  the preprocessor leaves behind — the identifier phrases themselves are stripped
+  earlier), the preamble sets `secnumdepth` to -2 and titlesec drops the labels.
+- **Image-only heading paragraphs render as in-flow images; body images take their
+  Word size** (`b899107`): a screenshot dropped into a Heading-2 paragraph became a
+  sectioning command with the `\includegraphics` as its title, and body images were
+  stretched to `\textwidth` regardless of their Word display size — together a
+  blank page (6 pages vs the reference's 5). Image-only headings lose their headline
+  marking (alt text does not count as text) and images use the declared
+  `css:width`/`css:height`.
+- **Body font families switch** (`eb27692`): font macros collect families from all
+  phrases (not just header/footer parts) and use `\newfontfamily` so bold/italic
+  shapes are inherited — the Times New Roman print-size sample renders in Times
+  inside the Arial document.
+- **Word's default bullet is the middle dot** (`96ca068`): Symbol-font F0B7 renders
+  as "·" (`\item[\textperiodcentered]`), matching the reference's Standard
+  Symbols PS glyph.
+- **Document-default line spacing** (`0d56230`): a "1.5 lines" Normal style
+  (surfaced by docx2hub as `css:default-line-height`) applies a global
+  `\linespread{1.5}`; single-spaced documents are unaffected.
+- **Paragraph spacing from the Normal style's space-after** (`9c1f44f`): the
+  hardcoded `\parskip` 8.5pt (an HSS_REP calibration) inflated every paragraph of
+  documents whose Normal style declares no space-after (Word default 0); parskip is
+  now driven by the surfaced value. Example3 renders 5 pages as the reference.
+
+### example4 — floating layout, fonts, vector art
+
+- **Font macros without header/footer parts** (`a082dc1`): the `\docxhffont`
+  definitions moved out of the header/footer block (documents without any — the
+  resume — referenced undefined macros; 44 errors).
+- **Pipeline SVGs convert to PDF** (`caec009`): drawingml2svg shapes are written
+  with document-order indices (svg shapes value-compare equal, so `index-of` gave
+  them all one name), the tex references same-basename PDFs converted by
+  `rsvg-convert` in the d2t wrapper after the pipeline, and zero-width degenerate
+  conversions are skipped. The six vector icons render.
+- **Absolutely positioned body text boxes** (`c97268b`): VML fallback shapes with
+  `position:absolute` render as textpos textblocks at their Word coordinates
+  (margin offsets + page margins, width from the shape style, 1pt modules). The
+  resume's two-column layout renders; header/footer shapes and margin-less shapes
+  are excluded (the classification marking would otherwise produce NaN
+  coordinates — caught by the example2 guard).
+- **VML length units are honoured** (base repo, conf): the text-box template read
+  `margin-left/top` and `width` by stripping the unit and treating the number as
+  pt, so Word's `margin-top:5in`/`8in` boxes landed at y≈77/80pt over the name
+  and header (the visible "D i r e cCourse" garbling and stacked job titles). A
+  `tr:css-length-to-pt` helper now converts in/cm/mm/pc/px to pt (unitless = pt,
+  unparseable values fall back), also for the page-margin bases; the two boxes
+  sit at 432/648pt as in the reference.
+- **example3 known-good state + guard script** (base repo, conf): the regression
+  guard now has measured invariants for the second document
+  (`.zcode/plans/example3-known-good.md`, full-diff style: 5 Letter pages, 0
+  errors, unnumbered headings, 13 middot bullets, Arial+Times faces, ~21.6pt
+  1.5-spacing pitch, screenshot placement, no metadata leaks) and
+  `.zcode/verify-known-good.sh` automates 22 checks across all three examples.
+  Measuring it surfaced one leak, fixed here: the Word image title (docx2hub's
+  `dbk:mediaobject/dbk:info`) printed as literal text above the screenshot
+  ("Amend Default Styles"); info is now suppressed like `alt` (only example3's
+  mediaobject carries one, so the other examples' texs are unchanged).
+- **KOMA "not recommended" advisories filtered** (base repo, conf): scrbook
+  warns against fancyhdr and titlesec with KOMA classes (suggesting
+  scrlayer-scrpage / KOMA's own sectioning). Both are deliberate load-bearing
+  choices here (per-Word-section `\fancypagestyle`, rule widths,
+  `\headruleskip`; one `\titleformat` per docx Heading style) and none of the
+  KOMA features the advisories gate are used, so the preamble now loads
+  `silence` early with `\WarningFilter{scrbook}{Usage of package}` — build
+  logs are advisory-free for all three examples (0 errors, guard 22/22).
+- **Text-box wrapping matches Word: exact tracking + VML insets** (base repo,
+  conf): resume box lines wrapped earlier than Word for two model reasons.
+  Soul's default `\so` letterspaces at .25em (≈2.1pt at 8.5pt) where Word
+  declares absolute points (0.85–4.2pt here) — the conf now defines one
+  `\sodef` command per distinct tracking value (letterskip = the declared pt,
+  space = the font's natural interword space + tracking) and the emission
+  template picks the phrase's value (small ≥0.3pt trackings included now that
+  they are exact). And the VML textbox default internal margins (7.2pt
+  left/right, 3.6pt top/bottom) were ignored — the textblock/parbox now uses
+  box + inset geometry, which also moved the columns/name to their reference
+  x-positions. Line breaks now match the reference document-wide (47 rendered
+  lines in both); guard 22/22, example2 tex byte-identical.
+- **Classification marking put at the reference baseline** (base repo, conf): the
+  OFFICIAL marking's eso-pic shipout put the box 30pt below the page top, but the
+  put reference point renders ~3pt above the text baseline and the reference
+  (Word) places the 10pt Calibri baseline at 24.5pt — ours landed 8.5pt too low
+  (33.0pt). The put origin is now `pageHeight − 21.5`: measured baseline 24.6pt
+  vs the reference's 24.5pt on pages 1/2/6. Example3's marking put is
+  contentless (coordinate change only); example4 has no header parts. Guard
+  22/22.
+- **Anchored vector art placed at its Word coordinates** (docx2hub `e06de91`,
+  base repo conf + d2t): the resume's decorative vector shapes rendered inline
+  in the flow (and shrunk). Fix chain: drawingml2svg scales group children's
+  drawn extent by the group's ext/chExt factor (positions were mapped, sizes
+  stayed in child space — ~24 % too small); paragraph-anchored art drops the
+  paragraphs-before × line-pitch pos-y term (the anchor paragraphs have no
+  height in Word, matching the VML/raster margin+offset formula), making the
+  d2s coordinates true page points; the wml-to-dbk svg template reads the
+  anchor attrs from the svg itself (the ancestor lookup never fired) and puts
+  css:position-* on the imagedata; the page-sized #bee0cd debug rect is
+  dropped; the conf places anchored svgs as textpos textblocks at the viewBox
+  offset behind following content; rsvg-convert now runs with -d/-p 72 (it
+  read unitless svg sizes as 96 dpi px and shrank every converted PDF to
+  75 % — the contact icons' "coarse size" was this). Result: the background
+  group renders 612×792 at (0,0) behind the text (full-page colour histogram
+  within ~1 % of the reference, purple band 0–89pt exact), chevrons sit at
+  their headings, corner clusters at their anchors; guard 22/22 with
+  example2/3 texs byte-identical.
+- **Lato-only fonts: no ArialMT, bullets restored** (base repo, conf): ArialMT
+  was used by a single glyph — the class default footer page number, emitted
+  because the `\pagestyle{empty}` suppression sat inside the
+  `exists(docx-headers)` block. The reference (a docx without footer parts)
+  prints no page number at all; the suppression now also emits for headerless
+  documents (fancyhdr loaded just for the plain redefinition). Separately, all
+  11 bullet glyphs were silently dropped — soul analyses `\so{}` arguments in
+  a hardcoded 8-bit ectt1000 that lacks U+2022; the preamble redefines
+  `\SOUL@tt` to lmmono10-regular.otf under LuaLaTeX (hyphen width re-measured),
+  so bullets render from the document font. The PDF now embeds the five Lato
+  faces only, 0 errors, 0 missing-character warnings.
+- **Word exact line rules and textbox spacer paragraphs render** (base repo,
+  conf + preprocess): the resume sets line spacing with `w:lineRule="exact"`
+  (`w:line="260"`=13pt, `"380"`=19pt) on every content paragraph, but the
+  pt-valued `css:line-height` had no LaTeX emitter (only unitless multiples
+  did), so boxes fell back to the hardcoded 1.15×size leading — 9.8/11.5pt
+  where Word paces 13pt. Three defects fixed together: (a) the paragraph
+  `\fontsize` wrapper now uses a pt line-height (exact/atLeast) as the
+  baselineskip, floored at the natural leading; (b) textbox paragraphs end
+  with an explicit `\par` inside their font group — the last paragraph of a
+  box previously broke at the parbox end after the group closed, taking the
+  ambient leading (the profile summary rendered at 26.4pt pitch: a leaked
+  `{\fontsize{23pt}{26.5pt}` anchor-paragraph group spanned the whole body
+  because the paragraph's effective size counted the textbox runs inside its
+  floating shapes; only the paragraph's own runs count now); (c) the
+  preprocess keeps empty paragraphs inside body v:textboxes (Word's spacer
+  lines — the skills box alternates labels with empty 19pt paragraphs) and
+  the conf renders an empty paragraph as `\null\par` so it actually occupies
+  its exact line height (a bare `\par` in vertical mode is a no-op). Box
+  first baselines are placed by Word's rule (box top + inset + line height −
+  descent ≈ 0.25em) via a zero-height `\null` reference line, replacing the
+  font-ascent-dependent `\parbox[t]` offset. Measured against the OnlyOffice
+  reference: line pitches 12.95 vs 13.0pt and 18.93/37.86 vs 19/38pt, skills
+  label↔triangle rows alternate exactly as in the reference, every box's
+  first line within −0.4…−2.1pt (was −5…−14pt); inter-box rhythm within
+  ~0.3pt. Guard 22/22, example2/3 unaffected (example2's only pt line-height
+  sits on an empty paragraph that emits nothing).
+
+### Submodule wiring
+
+- **Three more baradhili forks** (`ca0ddc9`): `calabash`, `cascade` and `evolve-hub`
+  now fetch from github.com/baradhili and advanced to the fork masters
+  (fast-forwards: evolve-hub +5, cascade +3, calabash +1). The remaining submodules
+  (xslt-util, xproc-util, htmlreports, mml-normalize, fontmaps) are unmodified
+  upstream pins — fork when first changed.
+
+Known open items for the resume (`.zcode/plans/futher-fixes.md`): the portrait
+photo (a shape `blipFill` swallowed by drawingml2svg) and contact-icon fine
+alignment. In-box line spacing now matches the reference (see the exact line
+rules item above).

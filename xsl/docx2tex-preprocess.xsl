@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" 
+<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
   xmlns:dbk="http://docbook.org/ns/docbook"
-  xmlns:css="http://www.w3.org/1996/css" 
+  xmlns:css="http://www.w3.org/1996/css"
+  xmlns:v="urn:schemas-microsoft-com:vml"
   xmlns:hub="http://transpect.io/hub"
   xmlns:mml="http://www.w3.org/1998/Math/MathML" 
   xmlns:tr="http://transpect.io"
@@ -260,6 +261,16 @@
     </xsl:if>
   </xsl:function>
   
+  <!-- a heading paragraph whose only content is an image (e.g. a screenshot dropped
+       into a Heading-styled paragraph) is not a sectioning command: drop the headline
+       marking and role so the image flows inline as a normal paragraph -->
+  <xsl:template match="para[@docx2tex:config eq 'headline'][not(normalize-space(string(.//text()[not(ancestor::dbk:mediaobject)])))]"
+                mode="docx2tex-preprocess" priority="6">
+    <xsl:copy>
+      <xsl:apply-templates select="@* except (@docx2tex:config, @role), node()" mode="#current"/>
+    </xsl:copy>
+  </xsl:template>
+
   <xsl:template match="para[@docx2tex:config eq 'headline']" mode="docx2tex-preprocess">
     <xsl:variable name="pos" select="index-of($headline-paras, generate-id(.))" as="xs:integer"/>
     <xsl:variable name="level" select="docx2tex:heading-level(.)" as="xs:integer"/>
@@ -341,9 +352,14 @@
   </xsl:template>
   
   <!-- remove empty paragraphs #13946; keep those that carry a page break
-       (Word section breaks are marked on the empty sectPr paragraph) -->
+       (Word section breaks are marked on the empty sectPr paragraph).
+       Inside floating body textboxes an empty paragraph is Word's vertical
+       spacer: it occupies its own exact line height, so keep it there
+       (header/footer boxes render in restricted horizontal mode). -->
 
-  <xsl:template match="para[not(.//text()) or (every $i in .//text() satisfies matches($i, '^\s+$'))][not(* except tab)][not(@css:page-break-after)]" mode="docx2tex-preprocess"/>
+  <xsl:template match="para[not(.//text()) or (every $i in .//text() satisfies matches($i, '^\s+$'))][not(* except tab)][not(@css:page-break-after)]
+                       [not(ancestor::v:textbox) or ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')]]"
+                mode="docx2tex-preprocess"/>
   
   <!-- resolve carriage returns in empty paragraphs. the paragraph will cause a break as well #14306 -->
   

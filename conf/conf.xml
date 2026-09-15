@@ -83,6 +83,24 @@
     <xsl:param name="type" as="xs:string"/><!-- P or Artifact-->
     <xsl:sequence select="if ($a11y) then  concat('\ccaVstruct', $pos, '{', $type, '}')  else ()"/>
   </xsl:function>
+
+  <!-- VML shape styles carry CSS units and Word writes any of them
+       (e.g. 'margin-top:5in'); a bare number means points. Convert per unit;
+       values that are not a plain length yield the empty sequence. -->
+  <xsl:function name="tr:css-length-to-pt" as="xs:double?">
+    <xsl:param name="length" as="xs:string?"/>
+    <xsl:analyze-string select="normalize-space($length)" regex="^([+-]?[0-9.]+)\s*(pt|in|cm|mm|pc|px)?$">
+      <xsl:matching-substring>
+        <xsl:sequence select="xs:double(regex-group(1))
+                              * (if (regex-group(2) eq 'in') then 72e0
+                                 else if (regex-group(2) eq 'cm') then 72e0 div 2.54e0
+                                 else if (regex-group(2) eq 'mm') then 72e0 div 25.4e0
+                                 else if (regex-group(2) eq 'pc') then 12e0
+                                 else if (regex-group(2) eq 'px') then 0.75e0
+                                 else 1e0)"/>
+      </xsl:matching-substring>
+    </xsl:analyze-string>
+  </xsl:function>
   
   <!-- tex document header, set declarations such as documentclass and usepackage -->
   <preamble>% docx2tex 1.10 --- ``TeX without any tariffs (local regulations may vary)''
@@ -115,6 +133,13 @@
       \setsansfont{Arial}
     \fi
     \usepackage{anyfontsize}
+    <!-- KOMA raises "not recommended" advisories for packages this conf
+         deliberately builds on: titlesec (one \titleformat per docx Heading
+         style, straight chapters) and fancyhdr (\fancypagestyle per Word
+         section, rule widths, \headruleskip). None of the KOMA features the
+         advisories mention (headsepline, \setkomafont, …) are used — filter
+         them, ahead of the first flagged package, to keep build logs clean -->
+    <xsl:text>\usepackage{silence}\WarningFilter{scrbook}{Usage of package}&#xa;</xsl:text>
     <xsl:if test="//dbk:imagedata">
       <xsl:text>\usepackage{graphicx}&#xa;</xsl:text>
       <!-- savebox for srcRect-cropped images; dedicated and without @ because the
@@ -174,10 +199,60 @@
     \usepackage{xfrac}
     <xsl:if test="//*[@css:letter-spacing or exists(key('style', @role)/@css:letter-spacing)] and $letter-spacing-def[normalize-space()]">
       <xsl:value-of select="concat('\usepackage{', $letter-spacing-def,'}&#xa;')"/>
+      <xsl:if test="$letter-spacing-def eq 'soul'">
+        <!-- soul analyses its argument in a hardcoded 8-bit ec typewriter font
+             (ectt1000); glyphs it lacks (e.g. the bullet U+2022) measure zero
+             and vanish from the \so output. Under LuaLaTeX switch the analysis
+             font to a Unicode one and re-measure soul's hyphen width from it,
+             keeping the syllable arithmetic consistent. -->
+        <xsl:text>\makeatletter\ifPDFTeX\else&#xa;</xsl:text>
+        <xsl:text>\font\SOUL@tt=[lmmono10-regular.otf]\relax&#xa;</xsl:text>
+        <xsl:text>\setbox\z@\hbox{\SOUL@tt-}\SOUL@ttwidth\wd\z@&#xa;</xsl:text>
+        <xsl:text>\fi\makeatother&#xa;</xsl:text>
+        <!-- one letterspacing command per distinct Word tracking value: soul's
+             default \so spaces at .25em (2.1pt at 8.5pt) where Word declares
+             absolute points (0.85–0.9pt here) — the wider tracking made lines
+             wrap well before Word. Letterskip = the declared pt value, the
+             space = the font's natural interword space plus the tracking
+             (evaluated at use time, so it scales with the current font). -->
+        <xsl:for-each select="$docx-letterspacings[position() le 26]">
+          <xsl:text>\sodef\docxso</xsl:text>
+          <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', position(), 1)"/>
+          <xsl:text>{}{</xsl:text>
+          <xsl:value-of select="."/>
+          <xsl:text>pt}{\dimexpr\fontdimen2\font+</xsl:text>
+          <xsl:value-of select="."/>
+          <xsl:text>pt\relax}{</xsl:text>
+          <xsl:value-of select="."/>
+          <xsl:text>pt}&#xa;</xsl:text>
+        </xsl:for-each>
+      </xsl:if>
     </xsl:if>
     \usepackage{arydshln}
-    <!-- approximate the typical Word 'Normal' style spacing after of 0.5 line (170tw = 8.5pt) -->
-    <xsl:text>\setlength{\parskip}{8.5pt}&#xa;\setlength{\parindent}{0pt}&#xa;</xsl:text>
+    <!-- paragraph spacing = the Normal style's space-after (Word default 0 when
+         not declared), surfaced on the hub root by docx2hub -->
+    <xsl:variable name="default-parskip" as="xs:string"
+                  select="replace((/dbk:hub/@css:default-space-after, '0pt')[1], '[a-z]+$', '')"/>
+    <xsl:text>\setlength{\parskip}{</xsl:text>
+    <xsl:value-of select="$default-parskip"/>
+    <xsl:text>pt}&#xa;\setlength{\parindent}{0pt}&#xa;</xsl:text>
+    <!-- absolutely positioned VML text boxes (Word floating shapes) render via
+         textpos at their Word coordinates; modules of 1pt make the textblock
+         arguments plain points from the paper's top-left corner -->
+    <xsl:if test="exists(//w:pict[v:shape/v:textbox][contains(v:shape/@style, 'position:absolute')][contains(v:shape/@style, 'margin-left')][contains(v:shape/@style, 'margin-top')])
+                  or exists(//dbk:imagedata[@css:position-left][@css:position-top]
+                                       [not(ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')])])">
+      <xsl:text>\usepackage[absolute]{textpos}&#xa;</xsl:text>
+      <xsl:text>\setlength{\TPHorizModule}{1pt}\setlength{\TPVertModule}{1pt}\textblockorigin{0pt}{0pt}&#xa;</xsl:text>
+    </xsl:if>
+
+    <!-- a "1.5 lines" (or other) Normal style spaces the whole document (Word
+         default line spacing, surfaced on the hub root by docx2hub) -->
+    <xsl:if test="/dbk:hub/@css:default-line-height[. castable as xs:double][xs:double(.) gt 1]">
+      <xsl:text>\linespread{</xsl:text>
+      <xsl:value-of select="/dbk:hub/@css:default-line-height"/>
+      <xsl:text>}&#xa;</xsl:text>
+    </xsl:if>
     <!-- match the LaTeX sectioning commands to the docx Heading{n} styles: one
          titlesec \titleformat per level, generated from the styles' css:rule
          (font size, weight, colour). Chapters become 'straight' (inline number,
@@ -224,6 +299,14 @@
         <xsl:text>}{0pt}{0pt}{0pt}&#xa;</xsl:text>
       </xsl:for-each>
     </xsl:if>
+    <!-- documents whose Word headings carry no list numbering must not get LaTeX
+         numbers either: when no headline paragraph has a Word number identifier,
+         disable section numbering (titlesec then drops the labels) -->
+    <xsl:if test="exists(//dbk:para[@docx2tex:config eq 'headline'])
+                  and empty(//dbk:para[@docx2tex:config eq 'headline']
+                                  [processing-instruction('latex')[starts-with(., '\label{mark-')]])">
+      <xsl:text>\setcounter{secnumdepth}{-2}&#xa;</xsl:text>
+    </xsl:if>
     <!-- Word headers/footers (included by docx2hub with include-header-and-footer=yes):
          every section's default header/footer part becomes a fancyhdr page style,
          switched at the Word section breaks (see the section-break template below).
@@ -231,24 +314,29 @@
          full-bleed bands) are rendered via eso-pic instead. -->
     <xsl:variable name="docx-headers" select="//dbk:div[@role eq 'docx2hub:header'][@condition eq 'default']" as="element(dbk:div)*"/>
     <xsl:variable name="docx-footers" select="//dbk:div[@role eq 'docx2hub:footer'][@condition eq 'default']" as="element(dbk:div)*"/>
+    <!-- resolve the document's phrase fonts (headers, footers and body runs)
+       once, in the preamble: a missing font must not trigger a luaotfload
+       reload from inside the output routine. Must not depend on the presence
+       of header/footer parts (documents without any reference the macros too) -->
+    <xsl:for-each select="$docx-hf-fonts">
+      <xsl:text>\ifPDFTeX\else\IfFontExistsTF{</xsl:text>
+      <xsl:value-of select="."/>
+      <xsl:text>}{\newfontfamily\docxhffont</xsl:text>
+      <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', position(), 1)"/>
+      <xsl:text>{</xsl:text>
+      <xsl:value-of select="."/>
+      <xsl:text>}}{\newcommand{\docxhffont</xsl:text>
+      <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', position(), 1)"/>
+      <xsl:text>}{}\typeout{docx2tex WARNING: font '</xsl:text>
+      <xsl:value-of select="."/>
+      <xsl:text>' not found - install it and rerun; using the fallback document font}}\fi&#xa;</xsl:text>
+    </xsl:for-each>
+
     <xsl:if test="exists($docx-headers)">
       <xsl:text>\usepackage{eso-pic}&#xa;\usepackage{fancyhdr}&#xa;\usepackage{zref-abspage}&#xa;</xsl:text>
       <!-- total number of physical pages, independent of numbering restarts
            (zref-abspage writes it to the aux as \@abspage@last) -->
       <xsl:text>\makeatletter\providecommand\@abspage@last{1}\newcommand{\docxpagecount}{\@abspage@last}\makeatother&#xa;</xsl:text>
-      <!-- resolve the header/footer fonts once, in the preamble: a missing font
-           must not trigger a luaotfload reload from inside the output routine -->
-      <xsl:for-each select="$docx-hf-fonts">
-        <xsl:text>\ifPDFTeX\else\IfFontExistsTF{</xsl:text>
-        <xsl:value-of select="."/>
-        <xsl:text>}{\newcommand{\docxhffont</xsl:text>
-        <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', position(), 1)"/>
-        <xsl:text>}{\fontspec{</xsl:text>
-        <xsl:value-of select="."/>
-        <xsl:text>}}}{\newcommand{\docxhffont</xsl:text>
-        <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', position(), 1)"/>
-        <xsl:text>}{}}\fi&#xa;</xsl:text>
-      </xsl:for-each>
       <!-- Word starts a new section's content on the next page whatever its parity;
            without this, scrbook's twoside \chapter inserts blank verso pages -->
       <xsl:text>\KOMAoption{open}{any}&#xa;</xsl:text>
@@ -263,9 +351,11 @@
            re-added after the shipout stack is cleared for a later section -->
       <xsl:text>\newcommand{\docxmarking}{%&#xa;</xsl:text>
       <xsl:variable name="hdr" select="$docx-headers[1]" as="element(dbk:div)"/>
-      <!-- marking text: baseline 30pt below the page top (Word header distance 25.5pt).
-           Word anchors the classification-marking textbox centered on the page
-           (mso-position-horizontal:center relative to page) -->
+      <!-- marking text: Word anchors the classification-marking textbox at the
+           page top, centered (mso-position-horizontal-relative:page); the
+           reference renders the 10pt Calibri OFFICIAL baseline 24.5pt below the
+           page top. The \put reference point itself renders ~3pt above the text
+           baseline, so the put goes 21.5pt below the page top. -->
       <xsl:variable name="marking-page-centered" as="xs:boolean"
                     select="exists($hdr//dbk:phrase[@role eq 'hub:foreign']//@style
                                      [contains(., 'mso-position-horizontal-relative:page')]
@@ -273,12 +363,12 @@
       <xsl:choose>
         <xsl:when test="$marking-page-centered">
           <xsl:text>  \put(\LenToUnit{0.5\paperwidth},</xsl:text>
-          <xsl:value-of select="number(replace(/dbk:hub/@css:page-height, '[a-z]+$', '')) - 30"/>
+          <xsl:value-of select="number(replace(/dbk:hub/@css:page-height, '[a-z]+$', '')) - 21.5"/>
           <xsl:text>){\makebox[0pt][c]{%&#xa;</xsl:text>
         </xsl:when>
         <xsl:otherwise>
           <xsl:text>  \put(56.7,</xsl:text>
-          <xsl:value-of select="number(replace(/dbk:hub/@css:page-height, '[a-z]+$', '')) - 30"/>
+          <xsl:value-of select="number(replace(/dbk:hub/@css:page-height, '[a-z]+$', '')) - 21.5"/>
           <xsl:text>){%&#xa;</xsl:text>
         </xsl:otherwise>
       </xsl:choose>
@@ -370,10 +460,19 @@
         </xsl:choose>
         <xsl:text>}&#xa;</xsl:text>
       </xsl:for-each>
-      <!-- chapter-opening pages (and anything KOMA resets to plain) stay clean -->
-      <xsl:text>\fancypagestyle{plain}{\fancyhf{}\renewcommand{\headrulewidth}{0pt}\renewcommand{\footrulewidth}{0pt}}&#xa;</xsl:text>
-      <xsl:text>\pagestyle{empty}&#xa;</xsl:text>
     </xsl:if>
+    <xsl:if test="empty($docx-headers)">
+      <!-- no Word header parts: nothing head/foot-ish is rendered by the block
+           above, so fancyhdr is loaded only for the plain redefinition below
+           (KOMA advisory filtered in the preamble) -->
+      <xsl:text>\usepackage{fancyhdr}&#xa;</xsl:text>
+    </xsl:if>
+    <!-- Word shows a page number only when a footer part defines one; documents
+         without header/footer parts get no page number at all (the class default
+         footer would otherwise print one in the default font). Chapter-opening
+         pages (and anything KOMA resets to plain) stay clean. -->
+    <xsl:text>\fancypagestyle{plain}{\fancyhf{}\renewcommand{\headrulewidth}{0pt}\renewcommand{\footrulewidth}{0pt}}&#xa;</xsl:text>
+    <xsl:text>\pagestyle{empty}&#xa;</xsl:text>
     <xsl:sequence select="if(exists($langs)) 
                           then string-join(xml2tex:langs-to-latex-pkg( $langs ), '&#xa;') 
                           else string-join(xml2tex:langs-to-latex-pkg( 'en' ), '&#xa;')"/>
@@ -391,6 +490,8 @@
   <ns prefix="svg" uri="http://www.w3.org/2000/svg"/>
   <ns prefix="docx2tex" uri="http://transpect.io/docx2tex"/>
   <ns prefix="docx2hub" uri="http://transpect.io/docx2hub"/>
+  <ns prefix="w" uri="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>
+  <ns prefix="v" uri="urn:schemas-microsoft-com:vml"/>
   <ns prefix="mml2tex" uri="http://transpect.io/mml2tex"/>
   <ns prefix="tr" uri="http://transpect.io"/>
 
@@ -533,10 +634,32 @@
   <xsl:variable name="text-style-elements" select="'phrase', 'superscript', 'subscript'" as="xs:string+"/>
 
   <template context="*[local-name() = $text-style-elements]
-                      [   (@css:letter-spacing and xs:double(replace(@css:letter-spacing, '[a-z]+$', '')) gt 0.5)
-                       or (exists(key('style', @role)[@css:letter-spacing[xs:double(replace(., '[a-z]+$', '')) gt 0.5]]) 
-                           and not(@css:letter-spacing[xs:double(replace(., '[a-z]+$', '')) le 0.5]))]">
-    <xsl:value-of select="if ($letter-spacing-def = 'soul') then '\so{' else '\textls{'"/>
+                      [   (@css:letter-spacing and xs:double(replace(@css:letter-spacing, '[a-z]+$', '')) ge 0.3)
+                       or (exists(key('style', @role)[@css:letter-spacing[xs:double(replace(., '[a-z]+$', '')) ge 0.3]]) 
+                           and not(@css:letter-spacing[xs:double(replace(., '[a-z]+$', '')) lt 0.3]))]">
+    <xsl:choose>
+      <xsl:when test="$letter-spacing-def eq 'soul'">
+        <!-- the command whose letterskip equals the phrase's declared Word
+             tracking (soul's default \so would space at .25em) -->
+        <xsl:variable name="tracking" as="xs:string"
+                      select="replace((@css:letter-spacing, key('style', @role)/@css:letter-spacing)[1], '[a-z]+$', '')"/>
+        <xsl:variable name="slot" as="xs:integer?"
+                      select="index-of($docx-letterspacings, $tracking)"/>
+        <xsl:choose>
+          <xsl:when test="exists($slot)">
+            <xsl:text>\docxso</xsl:text>
+            <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', $slot, 1)"/>
+            <xsl:text>{</xsl:text>
+          </xsl:when>
+          <xsl:otherwise>
+            <xsl:text>\so{</xsl:text>
+          </xsl:otherwise>
+        </xsl:choose>
+      </xsl:when>
+      <xsl:otherwise>
+        <xsl:text>\textls{</xsl:text>
+      </xsl:otherwise>
+    </xsl:choose>
     <xsl:next-match/>
     <xsl:text>}</xsl:text>
   </template>
@@ -692,27 +815,149 @@
   </template>
   
   <template context="dbk:alt"/>
+  <!-- Word image metadata (docx2hub puts the image title here) renders
+       nowhere in Word — suppress it like alt -->
+  <template context="dbk:mediaobject/dbk:info"/>
+
+  <!-- Word floating text boxes (VML fallback shapes with position:absolute):
+       render the box's paragraphs at the Word coordinates. Offsets are relative
+       to the text column start ('mso-position-*-relative:text'), so the page
+       margins are added; the vertical anchor paragraph is at the top margin. -->
+  <template context="w:pict[v:shape/v:textbox][contains(v:shape/@style, 'position:absolute')][contains(v:shape/@style, 'margin-left')][contains(v:shape/@style, 'margin-top')][not(ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')])]">
+    <xsl:variable name="style" select="v:shape/@style" as="xs:string"/>
+    <xsl:variable name="vml-left" as="xs:string"
+                  select="(tokenize($style, ';')[normalize-space(substring-before(., ':')) eq 'margin-left'], '0pt')[1]"/>
+    <xsl:variable name="vml-top" as="xs:string"
+                  select="(tokenize($style, ';')[normalize-space(substring-before(., ':')) eq 'margin-top'], '0pt')[1]"/>
+    <xsl:variable name="vml-width" as="xs:string"
+                  select="(tokenize($style, ';')[normalize-space(substring-before(., ':')) eq 'width'], '0pt')[1]"/>
+    <xsl:variable name="left" select="(tr:css-length-to-pt(substring-after($vml-left, ':')), 0e0)[1]" as="xs:double"/>
+    <xsl:variable name="top" select="(tr:css-length-to-pt(substring-after($vml-top, ':')), 0e0)[1]" as="xs:double"/>
+    <xsl:variable name="width" select="(tr:css-length-to-pt(substring-after($vml-width, ':')), 0e0)[1]" as="xs:double"/>
+    <xsl:variable name="page-left" select="(tr:css-length-to-pt(/dbk:hub/@css:margin-left), 72e0)[1]" as="xs:double"/>
+    <xsl:variable name="page-top" select="(tr:css-length-to-pt(/dbk:hub/@css:margin-top), 72e0)[1]" as="xs:double"/>
+    <!-- VML default textbox insets: 0.1in (7.2pt) left/right, 0.05in (3.6pt)
+         top/bottom (no shape in these documents declares @inset). Word starts
+         the text at box + left inset and wraps at box width minus both insets;
+         using the full box width made lines wrap later than Word and shifted
+         every box's text a few points left of the reference. -->
+    <xsl:variable name="inset-x" select="7.2e0" as="xs:double"/>
+    <xsl:variable name="inset-y" select="3.6e0" as="xs:double"/>
+    <!-- Word/OnlyOffice place the first line's baseline at box top + inset +
+         line height - descent (descent ~ 0.25em); the paragraph-level \null
+         reference line (see the para font-size template) puts the first
+         baseline exactly at textblock y + line height, so the y sheds the
+         descent; +1pt calibrates the reference's own sub-point overshoot -->
+    <xsl:variable name="first-para" as="element(dbk:para)?"
+                  select="(v:shape/v:textbox/w:txbxContent/dbk:para)[1]"/>
+    <xsl:variable name="first-size" as="xs:double"
+                  select="(max(for $s in ($first-para//dbk:phrase[ancestor::dbk:para[1] is $first-para]/@css:font-size,
+                                       $first-para/@css:font-size,
+                                       key('style', $first-para/@role)/@css:font-size)
+                          return number(replace($s, '[a-z]+$', ''))[. = .]), 12e0)[1]"/>
+    <!-- textpos module arguments are plain numbers (1pt modules), no units;
+         the box geometry is inset by the VML default internal margins -->
+    <xsl:text>\begin{textblock}{</xsl:text>
+    <xsl:value-of select="round(($width - 2 * $inset-x) * 10) div 10"/>
+    <xsl:text>}(</xsl:text>
+    <xsl:value-of select="round(($page-left + $left + $inset-x) * 10) div 10"/>
+    <xsl:text>,</xsl:text>
+    <xsl:value-of select="round(($page-top + $top + $inset-y - 0.25 * $first-size + 1) * 10) div 10"/>
+    <xsl:text>)\parbox[t]{</xsl:text>
+    <xsl:value-of select="round(($width - 2 * $inset-x) * 10) div 10"/>
+    <xsl:text>pt}{</xsl:text>
+    <xsl:apply-templates select="v:shape/v:textbox/element()" mode="#current"/>
+    <xsl:text>}\end{textblock}</xsl:text>
+  </template>
 
   <template context="dbk:imagedata[@fileref]">
     <rule name="includegraphics" type="cmd">
+      <!-- Word display size when declared (both dimensions, to keep the Word box
+           aspect even when it differs from the pixel aspect); textwidth share only
+           as a fallback -->
       <option select="concat('width=', 
-                             if(ancestor::dbk:figure)
-                             then 1 div count(ancestor::dbk:figure[last()]//*[local-name() = ('mediaobject', 'inlinemediaobject')])
-                             else 1,
-                             '\textwidth')"/>
+                             if (@css:width[not(. eq 'auto')])
+                             then @css:width
+                             else concat(if(ancestor::dbk:figure)
+                                         then 1 div count(ancestor::dbk:figure[last()]//*[local-name() = ('mediaobject', 'inlinemediaobject')])
+                                         else 1,
+                                         '\textwidth'),
+                             if (@css:height[not(. eq 'auto')])
+                             then concat(',height=', @css:height)
+                             else '')"/>
       <param select="replace(@fileref, '([%#])', '\\$1')"/>
     </rule>
+  </template>
+
+
+  <template context="dbk:imagedata[@fileref][@css:position-left][@css:position-top]
+                             [not(ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')])]">
+    <!-- Word floating pictures (wp:anchor): place at the anchor coordinates -->
+    <xsl:variable name="page-left" select="number(replace((/dbk:hub/@css:margin-left, '72pt')[1], '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="page-top" select="number(replace((/dbk:hub/@css:margin-top, '72pt')[1], '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="x" select="$page-left + number(replace(@css:position-left, '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="y" select="$page-top + number(replace(@css:position-top, '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="w" select="number(replace((@css:width[not(. eq 'auto')], '0pt')[1], '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:variable name="h" select="number(replace((@css:height[not(. eq 'auto')], '0pt')[1], '[a-z]+$', ''))" as="xs:double"/>
+    <xsl:text>\begin{textblock}{</xsl:text>
+    <xsl:value-of select="round($w * 10) div 10"/>
+    <xsl:text>}(</xsl:text>
+    <xsl:value-of select="round($x * 10) div 10"/>
+    <xsl:text>,</xsl:text>
+    <xsl:value-of select="round($y * 10) div 10"/>
+    <xsl:text>)\includegraphics[width=</xsl:text>
+    <xsl:value-of select="round($w * 10) div 10"/>
+    <xsl:text>pt,height=</xsl:text>
+    <xsl:value-of select="round($h * 10) div 10"/>
+    <xsl:text>pt]{</xsl:text>
+    <xsl:value-of select="replace(@fileref, '([%#])', '\\$1')"/>
+    <xsl:text>}\end{textblock}</xsl:text>
   </template>
   
   <xsl:variable name="svg-images" as="element(svg:svg)*"
                 select="//svg:svg"/>
   
   <template context="svg:svg">
-    <xsl:variable name="svg-filename" select="concat($basename, '-svg-', index-of($svg-images, .)[1], '.svg')" as="xs:string"/>
+    <!-- index by document order: svg shapes have no text nodes, so their string
+         values are all equal and index-of() would return the same position for
+         every one of them -->
+    <xsl:variable name="svg-index" select="count($svg-images[. &lt;&lt; current()]) + 1" as="xs:integer"/>
+    <xsl:variable name="svg-filename" select="concat($basename, '-svg-', $svg-index, '.svg')" as="xs:string"/>
     <xsl:variable name="svg-path" select="concat($path, '/', $svg-filename)" as="xs:string"/>
-    <rule name="includegraphics" type="cmd">
-      <param select="$svg-filename"/>
-    </rule>
+    <!-- the svg is written inside <name>.docx.tmp/word/ (d2t unzip layout, like
+         the media files); the d2t wrapper converts it to PDF there (LuaLaTeX
+         cannot include .svg), so the tex references the .pdf relatively through
+         that path. Degenerate conversions (zero width) are written for debug
+         but not referenced. -->
+    <!-- anchored vector art (docx2hub remembers the wp:anchor on the parent
+         imagedata): the d2s coordinates are page points, so the svg's viewBox
+         offset is the art's page position — place the natural-size image there
+         (textpos 1pt modules), behind whatever content follows in the flow -->
+    <xsl:variable name="anchored" as="element(dbk:imagedata)?"
+                  select="ancestor::dbk:imagedata[@css:position-left][@css:position-top]
+                                            [not(ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')])]"/>
+    <xsl:variable name="vb" select="tokenize(normalize-space(@viewBox), '\s+')" as="xs:string*"/>
+    <xsl:if test="@width[number(replace(., '[a-z]+$', '')) gt 0]">
+      <xsl:choose>
+        <xsl:when test="exists($anchored) and count($vb) eq 4
+                        and $vb[1][. castable as xs:double] and $vb[2][. castable as xs:double]">
+          <xsl:text>\begin{textblock}{</xsl:text>
+          <xsl:value-of select="round(number(replace(@width, '[a-z]+$', '')) * 10) div 10"/>
+          <xsl:text>}(</xsl:text>
+          <xsl:value-of select="round(number($vb[1]) * 10) div 10"/>
+          <xsl:text>,</xsl:text>
+          <xsl:value-of select="round(number($vb[2]) * 10) div 10"/>
+          <xsl:text>)\includegraphics{</xsl:text>
+          <xsl:value-of select="concat($basename, '.docx.tmp/word/', $basename, '-svg-', $svg-index, '.pdf')"/>
+          <xsl:text>}\end{textblock}</xsl:text>
+        </xsl:when>
+        <xsl:otherwise>
+          <rule name="includegraphics" type="cmd">
+            <param select="concat($basename, '.docx.tmp/word/', $basename, '-svg-', $svg-index, '.pdf')"/>
+          </rule>
+        </xsl:otherwise>
+      </xsl:choose>
+    </xsl:if>
     <file href="{$svg-path}" encoding="utf-8" method="xml"/>
   </template>
   
@@ -769,11 +1014,18 @@
   
   <template context="dbk:listitem[not(parent::dbk:varlistentry)][empty(@override)]">
     <rule name="item" type="cmd" break-before="1">        
-      <xsl:if test="    parent::dbk:itemizedlist/@mark 
-                    and parent::dbk:itemizedlist/@mark != 'bullet'
-                    and not($xerif)">
-        <option select="xml2tex:utf2tex((), parent::dbk:itemizedlist/@mark, $charmap, (), $texregex)"/>
-      </xsl:if>
+      <xsl:choose>
+        <xsl:when test="   parent::dbk:itemizedlist/@mark 
+                       and parent::dbk:itemizedlist/@mark != 'bullet'
+                       and not($xerif)">
+          <option select="xml2tex:utf2tex((), parent::dbk:itemizedlist/@mark, $charmap, (), $texregex)"/>
+        </xsl:when>
+        <xsl:when test="parent::dbk:itemizedlist/@mark eq 'bullet' and not($xerif)">
+          <!-- Word's default bullet is the Symbol-font middle dot (F0B7), which
+               Word/OnlyOffice render as a small dot, not LaTeX's full bullet -->
+          <option select="'\textperiodcentered'"/>
+        </xsl:when>
+      </xsl:choose>
       <xsl:if test="not($a11y)"><text select="' '"/></xsl:if>
       <text/>
     </rule>
@@ -1845,11 +2097,30 @@
        database reload there, which fails), so each font is resolved once in the
        preamble into a \docxhffont<n> macro. -->
   <xsl:variable name="docx-hf-fonts" as="xs:string*"
-                select="distinct-values(//dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')]//dbk:phrase/@css:font-family)"/>
+                select="distinct-values(//dbk:phrase/@css:font-family)"/>
+
+  <!-- distinct Word letter-spacing values (pt, absolute) that get soul
+       letterspacing (the &gt;=0.3pt filter mirrors the emission template) -->
+  <xsl:variable name="docx-letterspacings" as="xs:string*"
+                select="distinct-values(
+                          (//dbk:phrase/@css:letter-spacing,
+                           //css:rule/@css:letter-spacing)
+                          [number(replace(., '[a-z]+$', '')) ge 0.3]
+                          /replace(., '[a-z]+$', ''))"/>
   <template context="dbk:phrase[ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')]][@css:font-family]">
     <xsl:text>\ifPDFTeX\else\docxhffont</xsl:text>
     <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', index-of($docx-hf-fonts, @css:font-family), 1)"/>
     <xsl:text>\fi </xsl:text>
+    <xsl:next-match/>
+  </template>
+
+  <!-- body runs keep their Word font (e.g. a Times New Roman print-size sample
+       inside an Arial document); the macros resolve in the preamble and inherit
+       the surrounding weight/shape because they are \newfontfamily switches -->
+  <template context="dbk:phrase[@css:font-family][not(ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')])]">
+    <xsl:text>\docxhffont</xsl:text>
+    <xsl:value-of select="substring('ABCDEFGHIJKLMNOPQRSTUVWXYZ', index-of($docx-hf-fonts, @css:font-family), 1)"/>
+    <xsl:text> </xsl:text>
     <xsl:next-match/>
   </template>
 
@@ -1865,22 +2136,69 @@
   </template>
 
   <!-- font size for the whole paragraph, including its \par (Word derives the
-       line height from the tallest run; runs override the paragraph style) -->
-  <template context="dbk:para[exists(.//dbk:phrase/@css:font-size) or exists(key('style', @role)/@css:font-size)]">
+       line height from the tallest run; runs override the paragraph style).
+       Only the paragraph's own runs count: phrases inside a nested floating
+       textbox belong to that box's paragraphs, so an anchor paragraph holding
+       only shapes must not wrap the whole body in the shapes' largest font.
+       A pt-valued css:line-height (Word lineRule exact/atLeast) becomes the
+       baselineskip, floored at the natural 1.15 x size leading (atLeast
+       semantics; exact values below the natural leading are rare and would
+       clip in Word). Inside a body v:textbox the wrapper ends with an explicit
+       \par: the last paragraph of a box has no separator \par, and the
+       implicit one at the parbox end would run after the group closed, taking
+       the ambient font's leading instead of the paragraph's own. -->
+  <template context="dbk:para[exists(.//dbk:phrase/@css:font-size)
+                               or exists(key('style', @role)/@css:font-size)
+                               or exists(@css:line-height[matches(., 'pt$')])]">
+    <xsl:variable name="own-phrases" as="element(dbk:phrase)*"
+                  select=".//dbk:phrase[ancestor::dbk:para[1] is current()]"/>
+    <xsl:variable name="lh-pt" as="xs:double?"
+                  select="number(replace(@css:line-height[matches(., 'pt$')], 'pt$', ''))[. = .]"/>
+    <!-- header/footer boxes render in restricted horizontal mode, no \par there -->
+    <xsl:variable name="in-textbox" as="xs:boolean"
+                  select="exists(ancestor::v:textbox)
+                          and not(ancestor::dbk:div[@role = ('docx2hub:header', 'docx2hub:footer')])"/>
     <xsl:variable name="eff-size" as="xs:double?"
-                  select="max(for $s in (if (exists(.//dbk:phrase/@css:font-size))
-                                         then .//dbk:phrase/@css:font-size
-                                         else (@css:font-size, key('style', @role)/@css:font-size))
-                                     return number(replace($s, '[a-z]+$', '')))"/>
-    <xsl:if test="exists($eff-size) and $eff-size ne 12">
+                  select="(max(for $s in (if (exists($own-phrases/@css:font-size))
+                                          then $own-phrases/@css:font-size
+                                          else (@css:font-size, key('style', @role)/@css:font-size))
+                                      return number(replace($s, '[a-z]+$', ''))[. = .]),
+                          if ($in-textbox or exists($lh-pt)) then 12 else (),
+                         ())[1]"/>
+    <xsl:variable name="baseline" as="xs:double?"
+                  select="if (empty($eff-size)) then ()
+                          else if (exists($lh-pt))
+                          then max(($lh-pt, round($eff-size * 1.15 * 10) div 10))
+                          else round($eff-size * 1.15 * 10) div 10"/>
+    <xsl:variable name="wrap" as="xs:boolean"
+                  select="exists($eff-size) and ($eff-size ne 12 or $in-textbox or exists($lh-pt))"/>
+    <xsl:if test="$wrap">
       <xsl:text>{\fontsize{</xsl:text>
       <xsl:value-of select="$eff-size"/>
       <xsl:text>pt}{</xsl:text>
-      <xsl:value-of select="round($eff-size * 1.15 * 10) div 10"/>
+      <xsl:value-of select="round($baseline * 10) div 10"/>
       <xsl:text>pt}\selectfont </xsl:text>
+      <!-- a zero-height line whose baseline defines the parbox reference: the
+           first text baseline then lands exactly at textblock y + line height,
+           independent of the first line's font ascent (Word's rule, see the
+           textbox template) -->
+      <xsl:if test="$in-textbox
+                    and not(preceding-sibling::dbk:para)
+                    and normalize-space(string(.))">
+        <xsl:text>\null\par </xsl:text>
+      </xsl:if>
     </xsl:if>
     <xsl:next-match/>
-    <xsl:if test="exists($eff-size) and $eff-size ne 12">
+    <xsl:if test="$wrap">
+      <xsl:if test="$in-textbox">
+        <!-- an empty paragraph is Word's spacer line: \null starts horizontal
+             mode so the \par actually creates a line box at the paragraph's
+             own line height (a bare \par in vertical mode is a no-op) -->
+        <xsl:if test="not(normalize-space(string(.)))">
+          <xsl:text>\null </xsl:text>
+        </xsl:if>
+        <xsl:text>\par</xsl:text>
+      </xsl:if>
       <xsl:text>}</xsl:text>
     </xsl:if>
   </template>
